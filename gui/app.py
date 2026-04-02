@@ -1,0 +1,248 @@
+from __future__ import annotations
+
+from typing import Optional
+
+import pygame
+
+from ising.metropolis import MetropolisIsing
+from gui.controls import Button, LatticeSizeSelector, Slider, ToggleButton
+from gui.renderer import LatticeRenderer
+from gui.plots import MagnetizationPlot
+from utils import config
+from utils import rng as rng_utils
+
+
+class IsingApp:
+    """
+    Main Pygame application for the 2D Ising model.
+
+    Responsibilities:
+    - Manage the Pygame main loop
+    - Own the MetropolisIsing simulation object
+    - Route user input to controls
+    - Update simulation in real time
+    - Draw lattice, controls, and observables
+    """
+
+    def __init__(self) -> None:
+        # Pygame window and timing
+        self.screen = pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
+        pygame.display.set_caption("2D Ising Model (Metropolis)")
+        self.clock = pygame.time.Clock()
+        self.running = True
+
+        # Fonts
+        self.font = pygame.font.SysFont(None, config.FONT_SIZE)
+        self.small_font = pygame.font.SysFont(None, config.SMALL_FONT_SIZE)
+
+        # RNG shared by simulation
+        self.rng = rng_utils.create_rng()
+
+        # Simulation
+        self.sim = MetropolisIsing(
+            size=config.DEFAULT_LATTICE_SIZE,
+            temperature=config.DEFAULT_TEMPERATURE,
+            J=1.0,
+            h=config.DEFAULT_FIELD,
+            rng=self.rng,
+            initial_state="random",
+        )
+
+        # Layout: left side = lattice, right side = control panel
+        lattice_rect = pygame.Rect(
+            0,
+            0,
+            config.WINDOW_WIDTH - config.PANEL_WIDTH,
+            config.WINDOW_HEIGHT,
+        )
+        self.lattice_renderer = LatticeRenderer(lattice_rect)
+
+        # Controls area
+        panel_left = config.WINDOW_WIDTH - config.PANEL_WIDTH
+        padding = 10
+        x = panel_left + padding
+        y = padding
+        w = config.PANEL_WIDTH - 2 * padding
+        button_h = 30
+
+        # Start / Pause toggle
+        self.start_button = ToggleButton(
+            pygame.Rect(x, y, w, button_h),
+            text_off="Start",
+            text_on="Pause",
+        )
+        y += button_h + 10
+
+        # Reset button
+        self.reset_button = Button(
+            pygame.Rect(x, y, w, button_h),
+            text="Reset",
+        )
+        y += button_h + 20
+
+        # Temperature slider
+        self.temp_slider = Slider(
+            rect=pygame.Rect(x, y, w, 20),
+            min_val=config.MIN_TEMPERATURE,
+            max_val=config.MAX_TEMPERATURE,
+            initial=config.DEFAULT_TEMPERATURE,
+            label="Temperature T",
+            value_format="{:.2f}",
+        )
+        y += 50
+
+        # Magnetic field slider (optional)
+        self.field_slider = Slider(
+            rect=pygame.Rect(x, y, w, 20),
+            min_val=config.MIN_FIELD,
+            max_val=config.MAX_FIELD,
+            initial=config.DEFAULT_FIELD,
+            label="Field h",
+            value_format="{:.2f}",
+        )
+        y += 50
+
+        # Steps per frame slider
+        self.steps_slider = Slider(
+            rect=pygame.Rect(x, y, w, 20),
+            min_val=1,
+            max_val=config.MAX_STEPS_PER_FRAME,
+            initial=config.DEFAULT_STEPS_PER_FRAME,
+            label="Steps / frame",
+            value_format="{:.0f}",
+        )
+        y += 60
+
+        # Lattice size selector
+        selector_height = 28
+        self.lattice_selector = LatticeSizeSelector(
+            rect=pygame.Rect(x, y, w, selector_height),
+            sizes=config.LATTICE_SIZES,
+            default=config.DEFAULT_LATTICE_SIZE,
+        )
+        y += selector_height + 60
+
+        # Plot near bottom of panel
+        plot_height = 150
+        self.plot_rect = pygame.Rect(
+            x,
+            config.WINDOW_HEIGHT - plot_height - padding,
+            w,
+            plot_height,
+        )
+        self.plot = MagnetizationPlot(max_points=w)
+
+        # Simulation state
+        self.simulation_running = False
+
+    # --------------------------------------------------------------------- main loop
+
+    def run(self) -> None:
+        """Run the main Pygame loop."""
+        while self.running:
+            self.clock.tick(config.FPS)
+            self._handle_events()
+            self._update_simulation()
+            self._draw()
+
+    # --------------------------------------------------------------------- event handling
+
+    def _handle_events(self) -> None:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+                return
+            self._handle_controls_event(event)
+
+    def _handle_controls_event(self, event: pygame.event.Event) -> None:
+        # Start / Pause toggle
+        if self.start_button.handle_event(event):
+            self.simulation_running = not self.simulation_running
+            self.start_button.toggled = self.simulation_running
+
+        # Reset
+        if self.reset_button.handle_event(event):
+            self.sim.reset()
+            self.plot.clear()
+
+        # Temperature slider
+        if self.temp_slider.handle_event(event):
+            self.sim.set_temperature(self.temp_slider.value)
+
+        # Magnetic field slider
+        if self.field_slider.handle_event(event):
+            self.sim.set_field(self.field_slider.value)
+
+        # Steps per frame slider (value used during update)
+        self.steps_slider.handle_event(event)
+
+        # Lattice size selector
+        new_size = self.lattice_selector.handle_event(event)
+        if new_size is not None and new_size != self.sim.size:
+            self.sim.resize(new_size)
+            self.plot.clear()
+
+    # --------------------------------------------------------------------- simulation update
+
+    def _update_simulation(self) -> None:
+        if not self.simulation_running:
+            return
+
+        steps_per_frame = int(round(self.steps_slider.value))
+        steps_per_frame = max(1, min(steps_per_frame, config.MAX_STEPS_PER_FRAME))
+
+        for _ in range(steps_per_frame):
+            self.sim.sweep()
+
+        # Record magnetization for plotting
+        m = self.sim.magnetization()
+        self.plot.add_point(m)
+
+    # --------------------------------------------------------------------- drawing
+
+    def _draw(self) -> None:
+        self.screen.fill(config.BG_COLOR)
+
+        # Lattice
+        self.lattice_renderer.draw(self.screen, self.sim.spins)
+
+        # Control panel background
+        panel_rect = pygame.Rect(
+            config.WINDOW_WIDTH - config.PANEL_WIDTH,
+            0,
+            config.PANEL_WIDTH,
+            config.WINDOW_HEIGHT,
+        )
+        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, panel_rect)
+
+        # Controls
+        self.start_button.draw(self.screen, self.font, active=self.start_button.toggled)
+        self.reset_button.draw(self.screen, self.font)
+        self.temp_slider.draw(self.screen, self.font)
+        self.field_slider.draw(self.screen, self.font)
+        self.steps_slider.draw(self.screen, self.font)
+        self.lattice_selector.draw(self.screen, self.font)
+
+        # Observables (M, E, T, h)
+        m = self.sim.magnetization()
+        e = self.sim.energy_per_spin()
+        T = self.sim.temperature
+        h_val = self.sim.h
+
+        obs_x = panel_rect.x + 10
+        obs_y = self.lattice_selector.rect.bottom + 5
+
+        for text in [
+            f"M = {m:.3f}",
+            f"E / spin = {e:.3f}",
+            f"T = {T:.2f}",
+            f"h = {h_val:.2f}",
+        ]:
+            surf = self.small_font.render(text, True, config.TEXT_COLOR)
+            self.screen.blit(surf, (obs_x, obs_y))
+            obs_y += surf.get_height() + 2
+
+        # Plot of magnetization
+        self.plot.draw(self.screen, self.plot_rect)
+
+        pygame.display.flip()

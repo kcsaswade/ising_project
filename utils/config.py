@@ -1,0 +1,52 @@
+"""
+Global configuration for the Ising project.
+
+Keeps GUI and simulation parameters in one place.
+"""
+
+# Window and layout
+WINDOW_WIDTH = 1000
+WINDOW_HEIGHT = 700
+PANEL_WIDTH = 260
+FPS = 30
+
+# Lattice sizes available in the GUI
+LATTICE_SIZES = [32, 64, 100]
+DEFAULT_LATTICE_SIZE = 64
+
+# Simulation parameters
+DEFAULT_TEMPERATURE = 2.5
+MIN_TEMPERATURE = 0.5
+MAX_TEMPERATURE = 5.0
+
+DEFAULT_FIELD = 0.0
+MIN_FIELD = -2.0
+MAX_FIELD = 2.0
+
+DEFAULT_STEPS_PER_FRAME = 1
+MAX_STEPS_PER_FRAME = 20
+
+# Colors (RGB)
+BG_COLOR = (10, 10, 30)
+
+SPIN_UP_COLOR = (220, 230, 255)   # light color for +1
+SPIN_DOWN_COLOR = (40, 40, 80)    # dark color for -1
+
+PANEL_BG_COLOR = (25, 25, 50)
+
+TEXT_COLOR = (230, 230, 240)
+
+BUTTON_COLOR = (70, 80, 130)
+BUTTON_ACTIVE_COLOR = (110, 120, 170)
+BUTTON_BORDER_COLOR = (220, 220, 240)
+
+SLIDER_TRACK_COLOR = (180, 180, 220)
+SLIDER_HANDLE_COLOR = (230, 230, 250)
+
+PLOT_BG_COLOR = (15, 15, 35)
+PLOT_LINE_COLOR = (120, 200, 255)
+PLOT_BORDER_COLOR = (200, 200, 230)
+
+# Fonts
+FONT_SIZE = 18
+SMALL_FONT_SIZE = 14
