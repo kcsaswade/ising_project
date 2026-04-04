@@ -7,7 +7,8 @@ import pygame
 from ising.metropolis import MetropolisIsing
 from gui.controls import Button, LatticeSizeSelector, Slider, ToggleButton
 from gui.renderer import LatticeRenderer
-from gui.plots import MagnetizationPlot
+#from gui.plots import MagnetizationPlot
+from gui.plots import TimeSeriesPlot
 from utils import config
 from utils import rng as rng_utils
 
@@ -130,7 +131,12 @@ class IsingApp:
             w,
             plot_height,
         )
-        self.plot = MagnetizationPlot(max_points=w)
+        #self.plot = MagnetizationPlot(max_points=w)
+        self.m_plot = TimeSeriesPlot(
+            max_points=w,
+            label="Magnetization",
+            y_range=(-1.0, 1.0),
+        )
 
         # Simulation state
         self.simulation_running = False
@@ -196,7 +202,9 @@ class IsingApp:
 
         # Record magnetization for plotting
         m = self.sim.magnetization()
-        self.plot.add_point(m)
+        #self.plot.add_point(m)
+        self.m_plot.add_point(m)
+
 
     # --------------------------------------------------------------------- drawing
 
@@ -243,6 +251,7 @@ class IsingApp:
             obs_y += surf.get_height() + 2
 
         # Plot of magnetization
-        self.plot.draw(self.screen, self.plot_rect)
+        #self.plot.draw(self.screen, self.plot_rect)
+        self.m_plot.draw(self.screen, self.plot_rect)
 
         pygame.display.flip()
