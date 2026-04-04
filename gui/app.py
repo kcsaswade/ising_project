@@ -248,7 +248,8 @@ class IsingApp:
         new_size = self.lattice_selector.handle_event(event)
         if new_size is not None and new_size != self.sim.size:
             self.sim.resize(new_size)
-            self.plot.clear()
+            #self.plot.clear()
+            self.m_plot.clear()
 
     # --------------------------------------------------------------------- simulation update
 
