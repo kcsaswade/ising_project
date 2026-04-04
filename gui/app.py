@@ -75,10 +75,39 @@ class IsingApp:
         y += button_h + 10
 
         # Reset button
-        self.reset_button = Button(
-            pygame.Rect(x, y, w, button_h),
-            text="Reset",
+        # self.reset_button = Button(
+        #     pygame.Rect(x, y, w, button_h),
+        #     text="Reset",
+        # )
+        # --- Reset buttons (split) ---
+
+        button_w_half = (w - 10) // 2
+
+        self.reset_random_button = Button(
+            pygame.Rect(x, y, button_w_half, button_h),
+            text="Reset Random",
         )
+
+        self.reset_ordered_button = Button(
+            pygame.Rect(x + button_w_half + 10, y, button_w_half, button_h),
+            text="Reset Ordered",
+        )
+
+        y += button_h + 10
+        #y += button_h + 20
+
+        self.quench_button = Button(
+            pygame.Rect(x, y, w, button_h),
+            text="Quench",
+        )
+
+        y += button_h + 10
+
+        self.clear_button = Button(
+            pygame.Rect(x, y, w, button_h),
+            text="Clear Data",
+        )
+
         y += button_h + 20
 
         # Temperature slider
@@ -153,6 +182,18 @@ class IsingApp:
 
     # --------------------------------------------------------------------- event handling
 
+    def _clear_data(self) -> None:
+        """Clear all plots (and later stats)."""
+        self.m_plot.clear()
+
+        # Future-proofing:
+        if hasattr(self, "e_plot"):
+            self.e_plot.clear()
+        if hasattr(self, "abs_m_plot"):
+            self.abs_m_plot.clear()
+        if hasattr(self, "derived_plot"):
+            self.derived_plot.clear()
+
     def _handle_events(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -167,9 +208,30 @@ class IsingApp:
             self.start_button.toggled = self.simulation_running
 
         # Reset
-        if self.reset_button.handle_event(event):
-            self.sim.reset()
-            self.plot.clear()
+        # if self.reset_button.handle_event(event):
+        #     self.sim.reset()
+        #     self.plot.clear()
+        
+        # Reset Random
+        if self.reset_random_button.handle_event(event):
+            self.sim.reset(initial_state="random")
+            self._clear_data()
+
+        # Reset Ordered
+        if self.reset_ordered_button.handle_event(event):
+            self.sim.reset(initial_state="ordered")
+            self._clear_data()
+
+        # Clear Data
+        if self.clear_button.handle_event(event):
+            self._clear_data()
+
+        # Quench (simple version)
+        if self.quench_button.handle_event(event):
+            target_T = 1.0
+            self.sim.set_temperature(target_T)
+            self.temp_slider.value = target_T
+            self._clear_data()
 
         # Temperature slider
         if self.temp_slider.handle_event(event):
@@ -225,7 +287,11 @@ class IsingApp:
 
         # Controls
         self.start_button.draw(self.screen, self.font, active=self.start_button.toggled)
-        self.reset_button.draw(self.screen, self.font)
+        #self.reset_button.draw(self.screen, self.font)
+        self.reset_random_button.draw(self.screen, self.font)
+        self.reset_ordered_button.draw(self.screen, self.font)
+        self.quench_button.draw(self.screen, self.font)
+        self.clear_button.draw(self.screen, self.font)
         self.temp_slider.draw(self.screen, self.font)
         self.field_slider.draw(self.screen, self.font)
         self.steps_slider.draw(self.screen, self.font)
