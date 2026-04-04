@@ -71,7 +71,13 @@ class MetropolisIsing:
         """
         if initial_state is not None:
             self.initial_state = initial_state
-        self._init_spins()
+        #self._init_spins()
+        if self.initial_state == "ordered":
+        # Randomly choose up or down
+            up = self.rng.random() < 0.5
+            self.spins = lattice.ordered_lattice(self.size, up=up)
+        else:
+            self.spins = lattice.random_lattice(self.size, self.rng)
 
     def resize(self, new_size: int, initial_state: Optional[str] = None) -> None:
         """
