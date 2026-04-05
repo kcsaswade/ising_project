@@ -161,7 +161,7 @@ class IsingApp:
         #     plot_height,
         # )
         plot_height = 120
-        gap = 20
+        gap = 35
 
         bottom = config.WINDOW_HEIGHT - 10
 
@@ -333,33 +333,70 @@ class IsingApp:
         T = self.sim.temperature
         h_val = self.sim.h
 
-        obs_x = panel_rect.x + 10
-        obs_y = self.lattice_selector.rect.bottom + 5
+        # obs_x = panel_rect.x + 10
+        # obs_y = self.lattice_selector.rect.bottom + 5
 
-        for text in [
-            f"M = {m:.3f}",
-            f"E / spin = {e:.3f}",
-            f"T = {T:.2f}",
-            f"h = {h_val:.2f}",
-        ]:
-            surf = self.small_font.render(text, True, config.TEXT_COLOR)
-            self.screen.blit(surf, (obs_x, obs_y))
-            obs_y += surf.get_height() + 2
+        # for text in [
+        #     f"M = {m:.3f}",
+        #     f"E / spin = {e:.3f}",
+        #     f"T = {T:.2f}",
+        #     f"h = {h_val:.2f}",
+        # ]:
+        #     surf = self.small_font.render(text, True, config.TEXT_COLOR)
+        #     self.screen.blit(surf, (obs_x, obs_y))
+        #     obs_y += surf.get_height() + 2
 
         # Plot of magnetization
         #self.plot.draw(self.screen, self.plot_rect)
         #self.m_plot.draw(self.screen, self.plot_rect)
         # Magnetization label
-        label = self.small_font.render("Magnetization", True, config.TEXT_COLOR)
-        self.screen.blit(label, (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 16))
+        # label = self.small_font.render("Magnetization", True, config.TEXT_COLOR)
+        # self.screen.blit(label, (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 16))
 
+        # self.m_plot.draw(self.screen, self.magnetization_plot_rect)
+
+        # Magnetization title (left)
+        label = self.font.render("Magnetization", True, config.TEXT_COLOR)
+        self.screen.blit(
+            label,
+            (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 22),
+        )
+
+        # Magnetization value (right)
+        value = self.font.render(f"M = {m:.3f}", True, config.TEXT_COLOR)
+        value_rect = value.get_rect()
+        value_rect.topright = (
+            self.magnetization_plot_rect.right,
+            self.magnetization_plot_rect.y - 22,
+        )
+        self.screen.blit(value, value_rect)
+
+        # Plot
         self.m_plot.draw(self.screen, self.magnetization_plot_rect)
 
 
         # Energy label
-        label = self.small_font.render("Energy", True, config.TEXT_COLOR)
-        self.screen.blit(label, (self.energy_plot_rect.x, self.energy_plot_rect.y - 16))
+        # label = self.small_font.render("Energy", True, config.TEXT_COLOR)
+        # self.screen.blit(label, (self.energy_plot_rect.x, self.energy_plot_rect.y - 16))
 
+        # self.e_plot.draw(self.screen, self.energy_plot_rect)
+        # Energy title (left)
+        label = self.font.render("Energy", True, config.TEXT_COLOR)
+        self.screen.blit(
+            label,
+            (self.energy_plot_rect.x, self.energy_plot_rect.y - 22),
+        )
+
+        # Energy value (right)
+        value = self.font.render(f"E / spin = {e:.3f}", True, config.TEXT_COLOR)
+        value_rect = value.get_rect()
+        value_rect.topright = (
+            self.energy_plot_rect.right,
+            self.energy_plot_rect.y - 22,
+        )
+        self.screen.blit(value, value_rect)
+
+        # Plot
         self.e_plot.draw(self.screen, self.energy_plot_rect)
 
         pygame.display.flip()
