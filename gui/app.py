@@ -153,10 +153,30 @@ class IsingApp:
         y += selector_height + 60
 
         # Plot near bottom of panel
-        plot_height = 150
-        self.plot_rect = pygame.Rect(
+        # plot_height = 150
+        # self.plot_rect = pygame.Rect(
+        #     x,
+        #     config.WINDOW_HEIGHT - plot_height - padding,
+        #     w,
+        #     plot_height,
+        # )
+        plot_height = 120
+        gap = 20
+
+        bottom = config.WINDOW_HEIGHT - 10
+
+        # Energy plot (bottom)
+        self.energy_plot_rect = pygame.Rect(
             x,
-            config.WINDOW_HEIGHT - plot_height - padding,
+            bottom - plot_height,
+            w,
+            plot_height,
+        )
+
+        # Magnetization plot (above it)
+        self.magnetization_plot_rect = pygame.Rect(
+            x,
+            bottom - 2 * plot_height - gap,
             w,
             plot_height,
         )
@@ -165,6 +185,12 @@ class IsingApp:
             max_points=w,
             label="Magnetization",
             y_range=(-1.0, 1.0),
+        )
+
+        self.e_plot = TimeSeriesPlot(
+            max_points=w,
+            label="Energy",
+            y_range=None,  # auto scaling
         )
 
         # Simulation state
@@ -185,6 +211,7 @@ class IsingApp:
     def _clear_data(self) -> None:
         """Clear all plots (and later stats)."""
         self.m_plot.clear()
+        self.e_plot.clear()
 
         # Future-proofing:
         if hasattr(self, "e_plot"):
@@ -263,10 +290,12 @@ class IsingApp:
         for _ in range(steps_per_frame):
             self.sim.sweep()
 
-        # Record magnetization for plotting
+        # Record magnetization and energy for plotting
         m = self.sim.magnetization()
+        e = self.sim.energy_per_spin()
         #self.plot.add_point(m)
         self.m_plot.add_point(m)
+        self.e_plot.add_point(e)
 
 
     # --------------------------------------------------------------------- drawing
@@ -319,6 +348,18 @@ class IsingApp:
 
         # Plot of magnetization
         #self.plot.draw(self.screen, self.plot_rect)
-        self.m_plot.draw(self.screen, self.plot_rect)
+        #self.m_plot.draw(self.screen, self.plot_rect)
+        # Magnetization label
+        label = self.small_font.render("Magnetization", True, config.TEXT_COLOR)
+        self.screen.blit(label, (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 16))
+
+        self.m_plot.draw(self.screen, self.magnetization_plot_rect)
+
+
+        # Energy label
+        label = self.small_font.render("Energy", True, config.TEXT_COLOR)
+        self.screen.blit(label, (self.energy_plot_rect.x, self.energy_plot_rect.y - 16))
+
+        self.e_plot.draw(self.screen, self.energy_plot_rect)
 
         pygame.display.flip()
