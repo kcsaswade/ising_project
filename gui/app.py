@@ -50,21 +50,30 @@ class IsingApp:
         )
 
         # Layout: left side = lattice, right side = control panel
-        lattice_rect = pygame.Rect(
-            0,
-            0,
-            config.WINDOW_WIDTH - config.PANEL_WIDTH,
-            config.WINDOW_HEIGHT,
-        )
-        self.lattice_renderer = LatticeRenderer(lattice_rect)
+        # lattice_rect = pygame.Rect(
+        #     0,
+        #     0,
+        #     config.WINDOW_WIDTH - config.PANEL_WIDTH,
+        #     config.WINDOW_HEIGHT,
+        # )
 
         # Controls area
-        panel_left = config.WINDOW_WIDTH - config.PANEL_WIDTH
+        #panel_left = config.WINDOW_WIDTH - config.PANEL_WIDTH
+        self.plots_left = config.WINDOW_WIDTH - config.PANEL_WIDTH
+        self.controls_left = config.WINDOW_WIDTH - 2 * config.PANEL_WIDTH
         padding = 10
-        x = panel_left + padding
+        x = self.controls_left + padding
         y = padding
         w = config.PANEL_WIDTH - 2 * padding
         button_h = 30
+
+        lattice_rect = pygame.Rect(
+            0,
+            0,
+            self.controls_left,
+            config.WINDOW_HEIGHT,
+        )
+        self.lattice_renderer = LatticeRenderer(lattice_rect)
 
         # Start / Pause toggle
         self.start_button = ToggleButton(
@@ -152,34 +161,38 @@ class IsingApp:
         )
         y += selector_height + 60
 
-        # Plot near bottom of panel
-        # plot_height = 150
-        # self.plot_rect = pygame.Rect(
-        #     x,
-        #     config.WINDOW_HEIGHT - plot_height - padding,
-        #     w,
-        #     plot_height,
-        # )
+        plot_x = self.plots_left + padding
+        plot_w = config.PANEL_WIDTH - 2 * padding
+
         plot_height = 120
-        gap = 35
+        gap = 30
 
-        bottom = config.WINDOW_HEIGHT - 10
+        top = 20  # start from top of plots panel
 
-        # Energy plot (bottom)
-        self.energy_plot_rect = pygame.Rect(
-            x,
-            bottom - plot_height,
-            w,
-            plot_height,
-        )
-
-        # Magnetization plot (above it)
+        # Magnetization (top)
         self.magnetization_plot_rect = pygame.Rect(
-            x,
-            bottom - 2 * plot_height - gap,
-            w,
+            plot_x,
+            top + 40,
+            plot_w,
             plot_height,
         )
+
+        # |M|
+        self.abs_m_plot_rect = pygame.Rect(
+            plot_x,
+            top + 40 + plot_height + gap,
+            plot_w,
+            plot_height,
+        )
+
+        # Energy
+        self.energy_plot_rect = pygame.Rect(
+            plot_x,
+            top + 40 + 2 * (plot_height + gap),
+            plot_w,
+            plot_height,
+        )
+
         #self.plot = MagnetizationPlot(max_points=w)
         self.m_plot = TimeSeriesPlot(
             max_points=w,
@@ -191,6 +204,12 @@ class IsingApp:
             max_points=w,
             label="Energy",
             y_range=None,  # auto scaling
+        )
+
+        self.abs_m_plot = TimeSeriesPlot(
+            max_points=w,
+            label="|M|",
+            y_range=(0.0, 1.0),
         )
 
         # Simulation state
@@ -212,14 +231,7 @@ class IsingApp:
         """Clear all plots (and later stats)."""
         self.m_plot.clear()
         self.e_plot.clear()
-
-        # Future-proofing:
-        if hasattr(self, "e_plot"):
-            self.e_plot.clear()
-        if hasattr(self, "abs_m_plot"):
-            self.abs_m_plot.clear()
-        if hasattr(self, "derived_plot"):
-            self.derived_plot.clear()
+        self.abs_m_plot.clear()
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():
@@ -293,8 +305,8 @@ class IsingApp:
         # Record magnetization and energy for plotting
         m = self.sim.magnetization()
         e = self.sim.energy_per_spin()
-        #self.plot.add_point(m)
         self.m_plot.add_point(m)
+        self.abs_m_plot.add_point(abs(m))  
         self.e_plot.add_point(e)
 
 
@@ -306,14 +318,23 @@ class IsingApp:
         # Lattice
         self.lattice_renderer.draw(self.screen, self.sim.spins)
 
-        # Control panel background
-        panel_rect = pygame.Rect(
-            config.WINDOW_WIDTH - config.PANEL_WIDTH,
+        # Controls panel
+        controls_rect = pygame.Rect(
+            self.controls_left,
             0,
             config.PANEL_WIDTH,
             config.WINDOW_HEIGHT,
         )
-        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, panel_rect)
+        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, controls_rect)
+
+        # Plots panel
+        plots_rect = pygame.Rect(
+            self.plots_left,
+            0,
+            config.PANEL_WIDTH,
+            config.WINDOW_HEIGHT,
+        )
+        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, plots_rect)
 
         # Controls
         self.start_button.draw(self.screen, self.font, active=self.start_button.toggled)
@@ -346,15 +367,6 @@ class IsingApp:
         #     self.screen.blit(surf, (obs_x, obs_y))
         #     obs_y += surf.get_height() + 2
 
-        # Plot of magnetization
-        #self.plot.draw(self.screen, self.plot_rect)
-        #self.m_plot.draw(self.screen, self.plot_rect)
-        # Magnetization label
-        # label = self.small_font.render("Magnetization", True, config.TEXT_COLOR)
-        # self.screen.blit(label, (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 16))
-
-        # self.m_plot.draw(self.screen, self.magnetization_plot_rect)
-
         # Magnetization title (left)
         label = self.font.render("Magnetization", True, config.TEXT_COLOR)
         self.screen.blit(
@@ -373,6 +385,25 @@ class IsingApp:
 
         # Plot
         self.m_plot.draw(self.screen, self.magnetization_plot_rect)
+
+        # Absolute Magnetization title (left)
+        label = self.font.render("|M|", True, config.TEXT_COLOR)
+        self.screen.blit(
+            label,
+            (self.abs_m_plot_rect.x, self.abs_m_plot_rect.y - 22),
+        )
+
+        # Value (right)
+        value = self.font.render(f"|M| = {abs(m):.3f}", True, config.TEXT_COLOR)
+        value_rect = value.get_rect()
+        value_rect.topright = (
+            self.abs_m_plot_rect.right,
+            self.abs_m_plot_rect.y - 22,
+        )
+        self.screen.blit(value, value_rect)
+
+        # Plot
+        self.abs_m_plot.draw(self.screen, self.abs_m_plot_rect)
 
 
         # Energy label
