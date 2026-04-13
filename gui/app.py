@@ -7,10 +7,10 @@ import pygame
 from ising.metropolis import MetropolisIsing
 from gui.controls import Button, LatticeSizeSelector, Slider, ToggleButton
 from gui.renderer import LatticeRenderer
-#from gui.plots import MagnetizationPlot
 from gui.plots import TimeSeriesPlot
 from utils import config
 from utils import rng as rng_utils
+from ising.statistics import RunningStats
 
 
 class IsingApp:
@@ -31,6 +31,7 @@ class IsingApp:
         pygame.display.set_caption("2D Ising Model (Metropolis)")
         self.clock = pygame.time.Clock()
         self.running = True
+        self.stats = RunningStats(window_size=300)
 
         # Fonts
         self.font = pygame.font.SysFont(None, config.FONT_SIZE)
@@ -232,6 +233,7 @@ class IsingApp:
         self.m_plot.clear()
         self.e_plot.clear()
         self.abs_m_plot.clear()
+        self.stats.clear()
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():
@@ -308,7 +310,7 @@ class IsingApp:
         self.m_plot.add_point(m)
         self.abs_m_plot.add_point(abs(m))  
         self.e_plot.add_point(e)
-
+        self.stats.add(e, m)
 
     # --------------------------------------------------------------------- drawing
 
@@ -347,6 +349,19 @@ class IsingApp:
         self.field_slider.draw(self.screen, self.font)
         self.steps_slider.draw(self.screen, self.font)
         self.lattice_selector.draw(self.screen, self.font)
+
+        N_spins = self.sim.size * self.sim.size
+
+        c = self.stats.heat_capacity(self.sim.temperature, N_spins)
+        chi = self.stats.susceptibility(self.sim.temperature, N_spins)
+
+        text_c = self.small_font.render(f"C = {c:.3f}", True, config.TEXT_COLOR)
+        text_chi = self.small_font.render(f"χ = {chi:.3f}", True, config.TEXT_COLOR)
+
+        # self.screen.blit(text_c, (self.controls_left + 10, self.y))
+        # self.screen.blit(text_chi, (self.controls_left + 10, self.y + 20))
+        self.screen.blit(text_c, (self.controls_left + 10, self.lattice_selector.rect.bottom + 25))
+        self.screen.blit(text_chi, (self.controls_left + 10, self.lattice_selector.rect.bottom + 50))
 
         # Observables (M, E, T, h)
         m = self.sim.magnetization()
@@ -405,12 +420,6 @@ class IsingApp:
         # Plot
         self.abs_m_plot.draw(self.screen, self.abs_m_plot_rect)
 
-
-        # Energy label
-        # label = self.small_font.render("Energy", True, config.TEXT_COLOR)
-        # self.screen.blit(label, (self.energy_plot_rect.x, self.energy_plot_rect.y - 16))
-
-        # self.e_plot.draw(self.screen, self.energy_plot_rect)
         # Energy title (left)
         label = self.font.render("Energy", True, config.TEXT_COLOR)
         self.screen.blit(
