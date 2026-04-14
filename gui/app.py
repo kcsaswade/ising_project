@@ -162,6 +162,13 @@ class IsingApp:
         )
         y += selector_height + 60
 
+        self.toggle_button = Button(
+            pygame.Rect(x, y, w, button_h),
+            text="Show χ",
+        )
+
+        y += button_h + 20
+
         plot_x = self.plots_left + padding
         plot_w = config.PANEL_WIDTH - 2 * padding
 
@@ -194,6 +201,14 @@ class IsingApp:
             plot_height,
         )
 
+        # Derived (C / χ)
+        self.derived_plot_rect = pygame.Rect(
+            plot_x,
+            top + 40 + 3 * (plot_height + gap),
+            plot_w,
+            plot_height,
+        )
+
         #self.plot = MagnetizationPlot(max_points=w)
         self.m_plot = TimeSeriesPlot(
             max_points=w,
@@ -211,6 +226,20 @@ class IsingApp:
             max_points=w,
             label="|M|",
             y_range=(0.0, 1.0),
+        )
+
+        # --- Derived quantities (C / χ) ---
+
+        self.c_history = []
+        self.chi_history = []
+        self.max_history = 1000
+
+        self.derived_mode = "C"  # or "CHI"
+
+        self.derived_plot = TimeSeriesPlot(
+            max_points=w,
+            label="Derived",
+            y_range=None,
         )
 
         # Simulation state
@@ -234,6 +263,9 @@ class IsingApp:
         self.e_plot.clear()
         self.abs_m_plot.clear()
         self.stats.clear()
+        self.c_history.clear()
+        self.chi_history.clear()
+        self.derived_plot.clear()
 
     def _handle_events(self) -> None:
         for event in pygame.event.get():
@@ -292,6 +324,14 @@ class IsingApp:
             #self.plot.clear()
             self.m_plot.clear()
 
+        if self.toggle_button.handle_event(event):
+            if self.derived_mode == "C":
+                self.derived_mode = "CHI"
+                self.toggle_button.text = "Show C"
+            else:
+                self.derived_mode = "C"
+                self.toggle_button.text = "Show χ"
+
     # --------------------------------------------------------------------- simulation update
 
     def _update_simulation(self) -> None:
@@ -311,6 +351,23 @@ class IsingApp:
         self.abs_m_plot.add_point(abs(m))  
         self.e_plot.add_point(e)
         self.stats.add(e, m)
+
+        N_spins = self.sim.size * self.sim.size
+
+        c = self.stats.heat_capacity(self.sim.temperature, N_spins)
+        chi = self.stats.susceptibility(self.sim.temperature, N_spins)
+
+        self.c_history.append(c)
+        self.chi_history.append(chi)
+
+        if len(self.c_history) > self.max_history:
+            self.c_history.pop(0)
+            self.chi_history.pop(0)
+
+        if self.derived_mode == "C":
+            self.derived_plot.values = self.c_history[-self.derived_plot.max_points:]
+        else:
+            self.derived_plot.values = self.chi_history[-self.derived_plot.max_points:]
 
     # --------------------------------------------------------------------- drawing
 
@@ -349,6 +406,7 @@ class IsingApp:
         self.field_slider.draw(self.screen, self.font)
         self.steps_slider.draw(self.screen, self.font)
         self.lattice_selector.draw(self.screen, self.font)
+        self.toggle_button.draw(self.screen, self.font)
 
         N_spins = self.sim.size * self.sim.size
 
@@ -438,5 +496,31 @@ class IsingApp:
 
         # Plot
         self.e_plot.draw(self.screen, self.energy_plot_rect)
+
+        # Derived title
+        label = self.font.render("Derived", True, config.TEXT_COLOR)
+        self.screen.blit(
+            label,
+            (self.derived_plot_rect.x, self.derived_plot_rect.y - 22),
+        )
+
+        # Value (right)
+        if self.derived_mode == "C":
+            val = self.c_history[-1] if self.c_history else 0.0
+            text = f"C = {val:.3f}"
+        else:
+            val = self.chi_history[-1] if self.chi_history else 0.0
+            text = f"χ = {val:.3f}"
+
+        value = self.font.render(text, True, config.TEXT_COLOR)
+        value_rect = value.get_rect()
+        value_rect.topright = (
+            self.derived_plot_rect.right,
+            self.derived_plot_rect.y - 22,
+        )
+        self.screen.blit(value, value_rect)
+
+        # Plot
+        self.derived_plot.draw(self.screen, self.derived_plot_rect)
 
         pygame.display.flip()
