@@ -160,7 +160,7 @@ class IsingApp:
             sizes=config.LATTICE_SIZES,
             default=config.DEFAULT_LATTICE_SIZE,
         )
-        y += selector_height + 60
+        y += selector_height + 20
 
         self.toggle_button = Button(
             pygame.Rect(x, y, w, button_h),
@@ -413,13 +413,13 @@ class IsingApp:
         c = self.stats.heat_capacity(self.sim.temperature, N_spins)
         chi = self.stats.susceptibility(self.sim.temperature, N_spins)
 
-        text_c = self.small_font.render(f"C = {c:.3f}", True, config.TEXT_COLOR)
-        text_chi = self.small_font.render(f"χ = {chi:.3f}", True, config.TEXT_COLOR)
+        # text_c = self.small_font.render(f"C = {c:.3f}", True, config.TEXT_COLOR)
+        # text_chi = self.small_font.render(f"χ = {chi:.3f}", True, config.TEXT_COLOR)
 
         # self.screen.blit(text_c, (self.controls_left + 10, self.y))
         # self.screen.blit(text_chi, (self.controls_left + 10, self.y + 20))
-        self.screen.blit(text_c, (self.controls_left + 10, self.lattice_selector.rect.bottom + 25))
-        self.screen.blit(text_chi, (self.controls_left + 10, self.lattice_selector.rect.bottom + 50))
+        # self.screen.blit(text_c, (self.controls_left + 10, self.lattice_selector.rect.bottom + 25))
+        # self.screen.blit(text_chi, (self.controls_left + 10, self.lattice_selector.rect.bottom + 50))
 
         # Observables (M, E, T, h)
         m = self.sim.magnetization()
