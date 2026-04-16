@@ -38,6 +38,18 @@ class IsingApp:
         self.sweep_results = None
         self.sweep_mode = "C"   # toggle between C(T) and χ(T)
         self.sweep_temps = np.linspace(1.0, 4.0, 20)
+        self.sweep_progress = 0.0
+
+        self.sweeping = False
+        self.sweep_index = 0
+        self.sweep_phase = "equil"   # or "measure"
+        self.sweep_step = 0
+
+        self.EQUIL_STEPS = 300
+        self.MEASURE_STEPS = 800
+        self.SUBSAMPLE = 10
+
+        self.sweep_results = ([], [], [])  # T, C, χ
 
         # Fonts
         self.font = pygame.font.SysFont(None, config.FONT_SIZE)
@@ -300,15 +312,31 @@ class IsingApp:
             self._handle_controls_event(event)
 
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
+
+        if self.mode == "SWEEP":
+            if self.live_button.handle_event(event):
+                self.mode = "LIVE"
+                self.simulation_running = False
+                self.sweep_results = None
+                self.sweep_progress = 0.0
+                self.sweeping = False
+                return
+
+            # Allow toggle during sweep view (after completion)
+            if not self.sweeping:
+                if self.sweep_toggle.handle_event(event):
+                    if self.sweep_mode == "C":
+                        self.sweep_mode = "CHI"
+                        self.sweep_toggle.text = "Show C(T)"
+                    else:
+                        self.sweep_mode = "C"
+                        self.sweep_toggle.text = "Show χ(T)"
+
+            return
         # Start / Pause toggle
         if self.start_button.handle_event(event):
             self.simulation_running = not self.simulation_running
             self.start_button.toggled = self.simulation_running
-
-        # Reset
-        # if self.reset_button.handle_event(event):
-        #     self.sim.reset()
-        #     self.plot.clear()
         
         # Reset Random
         if self.reset_random_button.handle_event(event):
@@ -361,7 +389,12 @@ class IsingApp:
         if self.sweep_button.handle_event(event):
             self.simulation_running = False
             self.mode = "SWEEP"
-            self.sweep_results = self.run_temperature_sweep()
+            self.sweeping = True
+            self.sweep_index = 0
+            self.sweep_phase = "equil"
+            self.sweep_step = 0
+            self.sweep_results = ([], [], [])
+            self.sweep_progress = 0.0
 
         # Toggle sweep plot
         if self.sweep_toggle.handle_event(event):
@@ -375,10 +408,63 @@ class IsingApp:
         # Back to live mode
         if self.live_button.handle_event(event):
             self.mode = "LIVE"
+            self.simulation_running = False
+            self.sweep_results = None
+            self.sweep_progress = 0.0
 
     # --------------------------------------------------------------------- simulation update
 
+    def _update_sweep(self):
+        T_vals, C_vals, chi_vals = self.sweep_results
+
+        if self.sweep_index >= len(self.sweep_temps):
+            self.sweeping = False
+            return
+
+        T = self.sweep_temps[self.sweep_index]
+
+        if self.sweep_phase == "equil":
+            if self.sweep_step == 0:
+                self.sim.set_temperature(T)
+                self.sim.reset("random")
+
+            self.sim.sweep()
+            self.sweep_step += 1
+
+            if self.sweep_step >= self.EQUIL_STEPS:
+                self.sweep_phase = "measure"
+                self.sweep_step = 0
+                self.stats.clear()
+
+        elif self.sweep_phase == "measure":
+            self.sim.sweep()
+
+            if self.sweep_step % self.SUBSAMPLE == 0:
+                e = self.sim.energy_per_spin()
+                m = self.sim.magnetization()
+                self.stats.add(e, m)
+
+            self.sweep_step += 1
+
+            if self.sweep_step >= self.MEASURE_STEPS:
+                N = self.sim.size * self.sim.size
+                C = self.stats.heat_capacity(T, N)
+                chi = self.stats.susceptibility(T, N)
+
+                T_vals.append(T)
+                C_vals.append(C)
+                chi_vals.append(chi)
+
+                self.sweep_index += 1
+                self.sweep_phase = "equil"
+                self.sweep_step = 0
+
+                self.sweep_progress = self.sweep_index / len(self.sweep_temps)
+
     def _update_simulation(self) -> None:
+        if self.mode == "SWEEP" and self.sweeping:
+            self._update_sweep()
+            return
         if not self.simulation_running:
             return
 
@@ -418,22 +504,35 @@ class IsingApp:
         results_C = []
         results_chi = []
 
-        for T in self.sweep_temps:
+        EQUIL_STEPS = 300
+        MEASURE_STEPS = 800
+        SUBSAMPLE = 10
+
+        total_T = len(self.sweep_temps)
+
+        for i, T in enumerate(self.sweep_temps):
             self.sim.set_temperature(T)
             self.sim.reset("random")
+            if 2.0 < T < 2.6:
+                EQUIL_STEPS = 600
+            else:
+                EQUIL_STEPS = 300
 
             # --- Equilibration ---
-            for _ in range(500):
+            for _ in range(EQUIL_STEPS):
                 self.sim.sweep()
 
             # --- Measurement ---
             self.stats.clear()
 
-            for _ in range(1000):
+            for step in range(MEASURE_STEPS):
                 self.sim.sweep()
-                e = self.sim.energy_per_spin()
-                m = self.sim.magnetization()
-                self.stats.add(e, m)
+
+                # Subsampling (VERY important)
+                if step % SUBSAMPLE == 0:
+                    e = self.sim.energy_per_spin()
+                    m = self.sim.magnetization()
+                    self.stats.add(e, m)
 
             N = self.sim.size * self.sim.size
             C = self.stats.heat_capacity(T, N)
@@ -442,6 +541,9 @@ class IsingApp:
             results_T.append(T)
             results_C.append(C)
             results_chi.append(chi)
+
+            # --- Progress update ---
+            self.sweep_progress = (i + 1) / total_T
 
         return results_T, results_C, results_chi
     # --------------------------------------------------------------------- drawing
@@ -540,8 +642,28 @@ class IsingApp:
         #     self.screen.blit(surf, (obs_x, obs_y))
         #     obs_y += surf.get_height() + 2
 
-        if self.mode == "SWEEP" and self.sweep_results is not None:
-            self._draw_sweep_plots()
+        if self.mode == "SWEEP":
+            if self.sweep_results is not None:
+                self._draw_sweep_plots()
+
+            # --- Progress bar ---
+            bar_x = self.plots_left + 10
+            bar_y = config.WINDOW_HEIGHT - 30
+            bar_w = config.PANEL_WIDTH - 20
+            bar_h = 10
+
+            pygame.draw.rect(self.screen, (80, 80, 80), (bar_x, bar_y, bar_w, bar_h))
+
+            fill_w = int(bar_w * self.sweep_progress)
+            pygame.draw.rect(self.screen, (100, 200, 255), (bar_x, bar_y, fill_w, bar_h))
+
+            # Optional label
+            pct = int(self.sweep_progress * 100)
+            text = self.small_font.render(f"Sweep: {pct}%", True, config.TEXT_COLOR)
+            self.screen.blit(text, (bar_x, bar_y - 20))
+
+            self.live_button.draw(self.screen, self.font)
+
             pygame.display.flip()
             return
 
