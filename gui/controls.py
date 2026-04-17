@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from tkinter import font
 from typing import List, Optional, Sequence, Tuple
 
 import pygame
@@ -15,17 +16,26 @@ class Button:
     rect: pygame.Rect
     text: str
 
-    def draw(self, surface: pygame.Surface, font: pygame.font.Font, active: bool = False) -> None:
-        base_color = config.BUTTON_ACTIVE_COLOR if active else config.BUTTON_COLOR
+    def draw(self, surface: pygame.Surface, font: pygame.font.Font, active: bool = False, disabled: bool = False) -> None:
+        if disabled:
+            base_color = (80, 80, 110)  # dimmed
+        elif active:
+            base_color = config.BUTTON_ACTIVE_COLOR
+        else:
+            base_color = config.BUTTON_COLOR
         pygame.draw.rect(surface, base_color, self.rect, border_radius=4)
         pygame.draw.rect(surface, config.BUTTON_BORDER_COLOR, self.rect, 1, border_radius=4)
 
-        label = font.render(self.text, True, config.TEXT_COLOR)
+        text_color = (160, 160, 180) if disabled else config.TEXT_COLOR
+        label = font.render(self.text, True, text_color)
         label_rect = label.get_rect(center=self.rect.center)
         surface.blit(label, label_rect)
 
-    def handle_event(self, event: pygame.event.Event) -> bool:
+    def handle_event(self, event: pygame.event.Event, disabled: bool = False) -> bool:
         """Return True if the button was clicked."""
+        if disabled:
+            return False
+
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 return True
@@ -41,10 +51,10 @@ class ToggleButton(Button):
         self.text_on = text_on
         self.toggled = False
 
-    def draw(self, surface: pygame.Surface, font: pygame.font.Font, active: bool = False) -> None:
+    def draw(self, surface: pygame.Surface, font: pygame.font.Font, active: bool = False, disabled: bool = False) -> None:
         self.text = self.text_on if self.toggled else self.text_off
         # Use toggled state for active color as well
-        super().draw(surface, font, active=self.toggled)
+        super().draw(surface, font, active=self.toggled, disabled=disabled)
 
 
 class Slider:
@@ -101,10 +111,11 @@ class Slider:
 
     # --- drawing and events -----------------------------------------------------
 
-    def draw(self, surface: pygame.Surface, font: pygame.font.Font) -> None:
+    def draw(self, surface: pygame.Surface, font: pygame.font.Font, disabled: bool = False) -> None:
         # Label text above slider
         label_text = f"{self.label}: {self.value_format.format(self.value)}"
-        label_surf = font.render(label_text, True, config.TEXT_COLOR)
+        text_color = (160, 160, 180) if disabled else config.TEXT_COLOR
+        label_surf = font.render(label_text, True, text_color)
         surface.blit(label_surf, (self.rect.x, self.rect.y - label_surf.get_height()))
 
         # Track
@@ -113,7 +124,7 @@ class Slider:
         track_right = self.rect.right - self._track_margin
         pygame.draw.line(
             surface,
-            config.SLIDER_TRACK_COLOR,
+            (120, 120, 150) if disabled else config.SLIDER_TRACK_COLOR,
             (track_left, track_y),
             (track_right, track_y),
             3,
@@ -122,9 +133,10 @@ class Slider:
         # Handle
         handle_x = self._value_to_pos()
         handle_pos = (handle_x, track_y)
-        pygame.draw.circle(surface, config.SLIDER_HANDLE_COLOR, handle_pos, self._handle_radius)
+        handle_color = (160, 160, 190) if disabled else config.SLIDER_HANDLE_COLOR
+        pygame.draw.circle(surface, handle_color, handle_pos, self._handle_radius)
 
-    def handle_event(self, event: pygame.event.Event) -> bool:
+    def handle_event(self, event: pygame.event.Event, disabled: bool = False) -> bool:
         """
         Handle mouse events.
 
@@ -133,6 +145,8 @@ class Slider:
         changed : bool
             True if the slider value changed.
         """
+        if disabled:
+            return False
         changed = False
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -179,21 +193,22 @@ class LatticeSizeSelector:
                 self.buttons.append((size, Button(btn_rect, str(size))))
                 x += button_width + gap
 
-    def draw(self, surface: pygame.Surface, font: pygame.font.Font) -> None:
+    def draw(self, surface: pygame.Surface, font: pygame.font.Font, disabled: bool = False) -> None:
         # Label above buttons
-        label_surf = font.render("Lattice size N", True, config.TEXT_COLOR)
+        text_color = (160, 160, 180) if disabled else config.TEXT_COLOR
+        label_surf = font.render("Lattice size N", True, text_color)
         surface.blit(label_surf, (self.rect.x, self.rect.y - label_surf.get_height() - 2))
 
         for size, button in self.buttons:
             active = (size == self.current_size)
-            button.draw(surface, font, active=active)
+            button.draw(surface, font, active=active, disabled=disabled)
 
-    def handle_event(self, event: pygame.event.Event) -> Optional[int]:
+    def handle_event(self, event: pygame.event.Event, disabled: bool = False) -> Optional[int]:
         """
         Handle events; returns the newly selected size if changed, else None.
         """
         for size, button in self.buttons:
-            if button.handle_event(event):
+            if button.handle_event(event, disabled=disabled):
                 self.current_size = size
                 return size
         return None

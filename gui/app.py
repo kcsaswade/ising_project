@@ -325,50 +325,50 @@ class IsingApp:
                 return
             return
         # Start / Pause toggle
-        if self.start_button.handle_event(event):
+        if self.start_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             self.simulation_running = not self.simulation_running
             self.start_button.toggled = self.simulation_running
         
         # Reset Random
-        if self.reset_random_button.handle_event(event):
+        if self.reset_random_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             self.sim.reset(initial_state="random")
             self._clear_data()
 
         # Reset Ordered
-        if self.reset_ordered_button.handle_event(event):
+        if self.reset_ordered_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             self.sim.reset(initial_state="ordered")
             self._clear_data()
 
         # Clear Data
-        if self.clear_button.handle_event(event):
+        if self.clear_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             self._clear_data()
 
         # Quench (simple version)
-        if self.quench_button.handle_event(event):
+        if self.quench_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             target_T = 1.0
             self.sim.set_temperature(target_T)
             self.temp_slider.value = target_T
             self._clear_data()
 
         # Temperature slider
-        if self.temp_slider.handle_event(event):
+        if self.temp_slider.handle_event(event, disabled=(self.mode == "SWEEP")):
             self.sim.set_temperature(self.temp_slider.value)
 
         # Magnetic field slider
-        if self.field_slider.handle_event(event):
+        if self.field_slider.handle_event(event, disabled=(self.mode == "SWEEP")):
             self.sim.set_field(self.field_slider.value)
 
         # Steps per frame slider (value used during update)
-        self.steps_slider.handle_event(event)
+        self.steps_slider.handle_event(event, disabled=(self.mode == "SWEEP"))
 
         # Lattice size selector
-        new_size = self.lattice_selector.handle_event(event)
+        new_size = self.lattice_selector.handle_event(event, disabled=(self.mode == "SWEEP"))
         if new_size is not None and new_size != self.sim.size:
             self.sim.resize(new_size)
             #self.plot.clear()
             self.m_plot.clear()
 
-        if self.toggle_button.handle_event(event):
+        if self.toggle_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             if self.derived_mode == "C":
                 self.derived_mode = "CHI"
                 self.toggle_button.text = "Show C"
@@ -566,6 +566,7 @@ class IsingApp:
         self.sweep_chi_plot.draw(self.screen, self.sweep_chi_plot_rect)
 
     def _draw(self) -> None:
+        controls_disabled = (self.mode == "SWEEP")
         self.screen.fill(config.BG_COLOR)
 
         # Lattice
@@ -590,50 +591,28 @@ class IsingApp:
         pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, plots_rect)
 
         # Controls
-        self.start_button.draw(self.screen, self.font, active=self.start_button.toggled)
-        #self.reset_button.draw(self.screen, self.font)
-        self.reset_random_button.draw(self.screen, self.font)
-        self.reset_ordered_button.draw(self.screen, self.font)
-        self.quench_button.draw(self.screen, self.font)
-        self.clear_button.draw(self.screen, self.font)
-        self.temp_slider.draw(self.screen, self.font)
-        self.field_slider.draw(self.screen, self.font)
-        self.steps_slider.draw(self.screen, self.font)
-        self.lattice_selector.draw(self.screen, self.font)
-        self.toggle_button.draw(self.screen, self.font)
-        self.sweep_button.draw(self.screen, self.font)
+        self.start_button.draw(self.screen, self.font, active=self.start_button.toggled, disabled=controls_disabled)
+        self.reset_random_button.draw(self.screen, self.font, disabled=controls_disabled)
+        self.reset_ordered_button.draw(self.screen, self.font, disabled=controls_disabled)
+        self.quench_button.draw(self.screen, self.font, disabled=controls_disabled)
+        self.clear_button.draw(self.screen, self.font, disabled=controls_disabled)
+        self.temp_slider.draw(self.screen, self.font, disabled=controls_disabled)
+        self.field_slider.draw(self.screen, self.font, disabled=controls_disabled)
+        self.steps_slider.draw(self.screen, self.font, disabled=controls_disabled)
+        self.lattice_selector.draw(self.screen, self.font, disabled=controls_disabled)
+        self.toggle_button.draw(self.screen, self.font, disabled=controls_disabled)
+        self.sweep_button.draw(self.screen, self.font, disabled=controls_disabled)
 
         N_spins = self.sim.size * self.sim.size
 
         c = self.stats.heat_capacity(self.sim.temperature, N_spins)
         chi = self.stats.susceptibility(self.sim.temperature, N_spins)
 
-        # text_c = self.small_font.render(f"C = {c:.3f}", True, config.TEXT_COLOR)
-        # text_chi = self.small_font.render(f"χ = {chi:.3f}", True, config.TEXT_COLOR)
-
-        # self.screen.blit(text_c, (self.controls_left + 10, self.y))
-        # self.screen.blit(text_chi, (self.controls_left + 10, self.y + 20))
-        # self.screen.blit(text_c, (self.controls_left + 10, self.lattice_selector.rect.bottom + 25))
-        # self.screen.blit(text_chi, (self.controls_left + 10, self.lattice_selector.rect.bottom + 50))
-
         # Observables (M, E, T, h)
         m = self.sim.magnetization()
         e = self.sim.energy_per_spin()
         T = self.sim.temperature
         h_val = self.sim.h
-
-        # obs_x = panel_rect.x + 10
-        # obs_y = self.lattice_selector.rect.bottom + 5
-
-        # for text in [
-        #     f"M = {m:.3f}",
-        #     f"E / spin = {e:.3f}",
-        #     f"T = {T:.2f}",
-        #     f"h = {h_val:.2f}",
-        # ]:
-        #     surf = self.small_font.render(text, True, config.TEXT_COLOR)
-        #     self.screen.blit(surf, (obs_x, obs_y))
-        #     obs_y += surf.get_height() + 2
 
         if self.mode == "SWEEP":
             if self.sweep_results is not None:
