@@ -36,7 +36,6 @@ class IsingApp:
         self.mode = "LIVE"   # or "SWEEP"
 
         self.sweep_results = None
-        self.sweep_mode = "C"   # toggle between C(T) and χ(T)
         self.sweep_temps = np.linspace(1.0, 4.0, 20)
         self.sweep_progress = 0.0
 
@@ -193,12 +192,6 @@ class IsingApp:
         )
         y += button_h + 10
 
-        self.sweep_toggle = Button(
-            pygame.Rect(x, y, w, button_h),
-            text="Show χ(T)",
-        )
-        y += button_h + 20
-
         self.live_button = Button(
             pygame.Rect(x, y, w, button_h),
             text="Back to Live",
@@ -244,6 +237,14 @@ class IsingApp:
             plot_height,
         )
 
+        # Sweep plot 
+        self.sweep_chi_plot_rect = pygame.Rect(
+            self.magnetization_plot_rect.x,
+            self.magnetization_plot_rect.y + self.magnetization_plot_rect.height + 40,
+            self.magnetization_plot_rect.width,
+            self.magnetization_plot_rect.height,
+        )
+
         #self.plot = MagnetizationPlot(max_points=w)
         self.m_plot = TimeSeriesPlot(
             max_points=w,
@@ -277,7 +278,8 @@ class IsingApp:
             y_range=None,
         )
 
-        self.sweep_plot = TimeSeriesPlot(max_points=200)
+        self.sweep_c_plot = TimeSeriesPlot(max_points=200, label="C(T)")
+        self.sweep_chi_plot = TimeSeriesPlot(max_points=200, label="χ(T)")
 
         # Simulation state
         self.simulation_running = False
@@ -321,17 +323,6 @@ class IsingApp:
                 self.sweep_progress = 0.0
                 self.sweeping = False
                 return
-
-            # Allow toggle during sweep view (after completion)
-            if not self.sweeping:
-                if self.sweep_toggle.handle_event(event):
-                    if self.sweep_mode == "C":
-                        self.sweep_mode = "CHI"
-                        self.sweep_toggle.text = "Show C(T)"
-                    else:
-                        self.sweep_mode = "C"
-                        self.sweep_toggle.text = "Show χ(T)"
-
             return
         # Start / Pause toggle
         if self.start_button.handle_event(event):
@@ -395,15 +386,6 @@ class IsingApp:
             self.sweep_step = 0
             self.sweep_results = ([], [], [])
             self.sweep_progress = 0.0
-
-        # Toggle sweep plot
-        if self.sweep_toggle.handle_event(event):
-            if self.sweep_mode == "C":
-                self.sweep_mode = "CHI"
-                self.sweep_toggle.text = "Show C(T)"
-            else:
-                self.sweep_mode = "C"
-                self.sweep_toggle.text = "Show χ(T)"
         
         # Back to live mode
         if self.live_button.handle_event(event):
@@ -423,15 +405,23 @@ class IsingApp:
 
         T = self.sweep_temps[self.sweep_index]
 
+        if 2.0 < T < 2.6:
+            equil_steps = 600
+        else:
+            equil_steps = 300
+
         if self.sweep_phase == "equil":
             if self.sweep_step == 0:
                 self.sim.set_temperature(T)
-                self.sim.reset("random")
+
+                # Only reset ONCE at the start of sweep
+                if self.sweep_index == 0:
+                    self.sim.reset("random")
 
             self.sim.sweep()
             self.sweep_step += 1
 
-            if self.sweep_step >= self.EQUIL_STEPS:
+            if self.sweep_step >= equil_steps:
                 self.sweep_phase = "measure"
                 self.sweep_step = 0
                 self.stats.clear()
@@ -551,25 +541,29 @@ class IsingApp:
     def _draw_sweep_plots(self):
         T_vals, C_vals, chi_vals = self.sweep_results
 
-        if self.sweep_mode == "C":
-            data = C_vals
-            label_text = "C(T)"
-        else:
-            data = chi_vals
-            label_text = "χ(T)"
+        # --- Feed data ---
+        self.sweep_c_plot.values = C_vals
+        self.sweep_chi_plot.values = chi_vals
 
-        # Feed data
-        self.sweep_plot.values = data
-
-        # Title
-        label = self.font.render(label_text, True, config.TEXT_COLOR)
+        # --- C(T) title ---
+        label = self.font.render("C(T)", True, config.TEXT_COLOR)
         self.screen.blit(
             label,
             (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 22),
         )
 
-        # Plot (reuse top plot area for now)
-        self.sweep_plot.draw(self.screen, self.magnetization_plot_rect)
+        # --- C(T) plot ---
+        self.sweep_c_plot.draw(self.screen, self.magnetization_plot_rect)
+
+        # --- χ(T) title ---
+        label = self.font.render("χ(T)", True, config.TEXT_COLOR)
+        self.screen.blit(
+            label,
+            (self.sweep_chi_plot_rect.x, self.sweep_chi_plot_rect.y - 22),
+        )
+
+        # --- χ(T) plot ---
+        self.sweep_chi_plot.draw(self.screen, self.sweep_chi_plot_rect)
 
     def _draw(self) -> None:
         self.screen.fill(config.BG_COLOR)
@@ -608,7 +602,6 @@ class IsingApp:
         self.lattice_selector.draw(self.screen, self.font)
         self.toggle_button.draw(self.screen, self.font)
         self.sweep_button.draw(self.screen, self.font)
-        self.sweep_toggle.draw(self.screen, self.font)
 
         N_spins = self.sim.size * self.sim.size
 
