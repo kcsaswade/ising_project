@@ -54,6 +54,7 @@ class IsingApp:
         # Fonts
         self.font = pygame.font.SysFont(None, config.FONT_SIZE)
         self.small_font = pygame.font.SysFont(None, config.SMALL_FONT_SIZE)
+        self.status_font = pygame.font.SysFont(None, 22)
 
         # RNG shared by simulation
         self.rng = rng_utils.create_rng()
@@ -695,9 +696,32 @@ class IsingApp:
             fill_w = int(bar_w * self.sweep_progress)
             pygame.draw.rect(self.screen, (100, 200, 255), (bar_x, bar_y, fill_w, bar_h))
 
+            # --- Sweep status text (temperature + index) ---
+            if self.sweeping and self.sweep_index < len(self.sweep_temps):
+                current_T = self.sweep_temps[self.sweep_index]
+                step = self.sweep_index + 1
+                total = len(self.sweep_temps)
+                phase = self.sweep_phase  # "equil" or "measure"
+
+                status_str = f"T = {current_T:.2f}   |   {phase}   |   {step}/{total}"
+            else:
+                status_str = "Sweep complete"
+
+            status_text = self.font.render(status_str, True, config.TEXT_COLOR)
+
+            # Position ABOVE buttons (which are above the bar)
+            status_y = button_y - 22
+            self.screen.blit(status_text, (bar_x, status_y))
+
+
+            # # --- Progress % (optional, keep it) ---
+            # pct = int(self.sweep_progress * 100)
+            # pct_text = self.small_font.render(f"{pct}%", True, config.TEXT_COLOR)
+            # self.screen.blit(pct_text, (bar_x + bar_w - 40, bar_y - 20))
+
             # Optional label
             pct = int(self.sweep_progress * 100)
-            text = self.small_font.render(f"Sweep: {pct}%", True, config.TEXT_COLOR)
+            text = self.font.render(f"Sweep: {pct}%", True, config.TEXT_COLOR)
             self.screen.blit(text, (bar_x, bar_y - 20))
 
             self.live_button.draw(self.screen, self.font)
