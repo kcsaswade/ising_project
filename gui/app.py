@@ -38,6 +38,7 @@ class IsingApp:
         self.sweep_results = None
         self.sweep_temps = np.linspace(1.0, 4.0, 20)
         self.sweep_progress = 0.0
+        self.sweep_paused = False
 
         self.sweeping = False
         self.sweep_index = 0
@@ -197,6 +198,27 @@ class IsingApp:
             text="Back to Live",
         )
 
+        # --- Sweep control buttons (bottom) ---
+        btn_gap = 10
+        btn_w_half = (w - btn_gap) // 2
+
+        #sweep_btn_y = config.WINDOW_HEIGHT - 70  # just above progress bar
+
+        btn_gap = 10
+        btn_w_half = (w - btn_gap) // 2
+
+        # temporary y (will be overridden in _draw)
+        self.pause_sweep_button = ToggleButton(
+            pygame.Rect(x, 0, btn_w_half, button_h),
+            text_off="Pause Sweep",
+            text_on="Resume Sweep",
+        )
+
+        self.stop_sweep_button = Button(
+            pygame.Rect(x + btn_w_half + btn_gap, 0, btn_w_half, button_h),
+            text="Stop Sweep",
+        )
+
         plot_x = self.plots_left + padding
         plot_w = config.PANEL_WIDTH - 2 * padding
 
@@ -316,13 +338,29 @@ class IsingApp:
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
 
         if self.mode == "SWEEP":
-            if self.live_button.handle_event(event):
+            # Pause / Resume
+            if self.pause_sweep_button.handle_event(event):
+                self.sweep_paused = not self.sweep_paused
+                self.pause_sweep_button.toggled = self.sweep_paused
+
+            # Stop sweep (go back to LIVE cleanly)
+            if self.stop_sweep_button.handle_event(event):
                 self.mode = "LIVE"
-                self.simulation_running = False
+                self.sweeping = False
+                self.sweep_paused = False
                 self.sweep_results = None
                 self.sweep_progress = 0.0
+                self.simulation_running = False
+
+            # Back to live (existing)
+            if self.live_button.handle_event(event):
+                self.mode = "LIVE"
                 self.sweeping = False
-                return
+                self.sweep_paused = False
+                self.sweep_results = None
+                self.sweep_progress = 0.0
+                self.simulation_running = False
+
             return
         # Start / Pause toggle
         if self.start_button.handle_event(event, disabled=(self.mode == "SWEEP")):
@@ -380,6 +418,8 @@ class IsingApp:
         if self.sweep_button.handle_event(event):
             self.simulation_running = False
             self.mode = "SWEEP"
+            self.sweep_paused = False
+            self.pause_sweep_button.toggled = False
             self.sweeping = True
             self.sweep_index = 0
             self.sweep_phase = "equil"
@@ -397,6 +437,9 @@ class IsingApp:
     # --------------------------------------------------------------------- simulation update
 
     def _update_sweep(self):
+        if self.sweep_paused:
+            return
+        
         T_vals, C_vals, chi_vals = self.sweep_results
 
         if self.sweep_index >= len(self.sweep_temps):
@@ -624,6 +667,29 @@ class IsingApp:
             bar_w = config.PANEL_WIDTH - 20
             bar_h = 10
 
+            # --- Position sweep buttons ABOVE progress bar (aligned with bar) ---
+            btn_gap = 10
+            btn_w_half = (bar_w - btn_gap) // 2
+
+            button_y = bar_y - 60  # 40 pixels above bar
+
+            self.pause_sweep_button.rect.topleft = (bar_x, button_y)
+            self.stop_sweep_button.rect.topleft = (bar_x + btn_w_half + btn_gap, button_y)
+
+            # also update widths (important if panel sizes differ)
+            self.pause_sweep_button.rect.width = btn_w_half
+            self.stop_sweep_button.rect.width = btn_w_half
+
+            # Draw sweep control buttons
+            self.pause_sweep_button.draw(
+                self.screen,
+                self.font,
+                active=self.pause_sweep_button.toggled,
+            )
+
+            self.stop_sweep_button.draw(self.screen, self.font)
+
+            # Draw progress bar background
             pygame.draw.rect(self.screen, (80, 80, 80), (bar_x, bar_y, bar_w, bar_h))
 
             fill_w = int(bar_w * self.sweep_progress)
