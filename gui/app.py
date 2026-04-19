@@ -54,7 +54,6 @@ class IsingApp:
         # Fonts
         self.font = pygame.font.SysFont(None, config.FONT_SIZE)
         self.small_font = pygame.font.SysFont(None, config.SMALL_FONT_SIZE)
-        self.status_font = pygame.font.SysFont(None, 22)
 
         # RNG shared by simulation
         self.rng = rng_utils.create_rng()
@@ -68,14 +67,6 @@ class IsingApp:
             rng=self.rng,
             initial_state="random",
         )
-
-        # Layout: left side = lattice, right side = control panel
-        # lattice_rect = pygame.Rect(
-        #     0,
-        #     0,
-        #     config.WINDOW_WIDTH - config.PANEL_WIDTH,
-        #     config.WINDOW_HEIGHT,
-        # )
 
         # Controls area
         #panel_left = config.WINDOW_WIDTH - config.PANEL_WIDTH
@@ -303,6 +294,12 @@ class IsingApp:
 
         self.sweep_c_plot = TimeSeriesPlot(max_points=200, label="C(T)")
         self.sweep_chi_plot = TimeSeriesPlot(max_points=200, label="χ(T)")
+        
+        self.sweep_live_plot = TimeSeriesPlot(
+            max_points=120,
+            label="E(t)",
+            y_range=None,
+        )
 
         # Simulation state
         self.simulation_running = False
@@ -461,8 +458,11 @@ class IsingApp:
                 # Only reset ONCE at the start of sweep
                 if self.sweep_index == 0:
                     self.sim.reset("random")
+                # --- reset mini trace ---
+                self.sweep_live_plot.clear()
 
             self.sim.sweep()
+            self.sweep_live_plot.add_point(self.sim.energy_per_spin())
             self.sweep_step += 1
 
             if self.sweep_step >= equil_steps:
@@ -472,6 +472,7 @@ class IsingApp:
 
         elif self.sweep_phase == "measure":
             self.sim.sweep()
+            self.sweep_live_plot.add_point(self.sim.energy_per_spin())
 
             if self.sweep_step % self.SUBSAMPLE == 0:
                 e = self.sim.energy_per_spin()
@@ -668,6 +669,13 @@ class IsingApp:
             bar_w = config.PANEL_WIDTH - 20
             bar_h = 10
 
+            live_plot_rect = pygame.Rect(
+                bar_x,
+                bar_y - 200,   # sits above buttons/status
+                bar_w,
+                100,
+            )
+
             # --- Position sweep buttons ABOVE progress bar (aligned with bar) ---
             btn_gap = 10
             btn_w_half = (bar_w - btn_gap) // 2
@@ -696,6 +704,12 @@ class IsingApp:
             fill_w = int(bar_w * self.sweep_progress)
             pygame.draw.rect(self.screen, (100, 200, 255), (bar_x, bar_y, fill_w, bar_h))
 
+            # --- Mini live trace ---
+            label = self.font.render("E(t) at current T", True, config.TEXT_COLOR)
+            self.screen.blit(label, (live_plot_rect.x, live_plot_rect.y - 18))
+
+            self.sweep_live_plot.draw(self.screen, live_plot_rect)
+
             # --- Sweep status text (temperature + index) ---
             if self.sweeping and self.sweep_index < len(self.sweep_temps):
                 current_T = self.sweep_temps[self.sweep_index]
@@ -712,12 +726,6 @@ class IsingApp:
             # Position ABOVE buttons (which are above the bar)
             status_y = button_y - 22
             self.screen.blit(status_text, (bar_x, status_y))
-
-
-            # # --- Progress % (optional, keep it) ---
-            # pct = int(self.sweep_progress * 100)
-            # pct_text = self.small_font.render(f"{pct}%", True, config.TEXT_COLOR)
-            # self.screen.blit(pct_text, (bar_x + bar_w - 40, bar_y - 20))
 
             # Optional label
             pct = int(self.sweep_progress * 100)
