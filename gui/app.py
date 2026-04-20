@@ -12,6 +12,7 @@ from utils import config
 from utils import rng as rng_utils
 from ising.statistics import RunningStats
 import numpy as np
+import time
 
 
 class IsingApp:
@@ -57,6 +58,19 @@ class IsingApp:
 
         # RNG shared by simulation
         self.rng = rng_utils.create_rng()
+
+        self.saved_sweeps = []
+        self.selected_sweeps = set()
+        self.sweep_counter = 0
+
+        # simple color cycle for plots
+        self.sweep_colors = [
+            (255, 100, 100),
+            (100, 255, 100),
+            (100, 180, 255),
+            (255, 200, 100),
+            (200, 120, 255),
+        ]
 
         # Simulation
         self.sim = MetropolisIsing(
@@ -170,14 +184,14 @@ class IsingApp:
             sizes=config.LATTICE_SIZES,
             default=config.DEFAULT_LATTICE_SIZE,
         )
-        y += selector_height + 20
+        y += selector_height + 10
 
         self.toggle_button = Button(
             pygame.Rect(x, y, w, button_h),
             text="Show χ",
         )
 
-        y += button_h + 20
+        y += button_h + 10
 
         self.sweep_button = Button(
             pygame.Rect(x, y, w, button_h),
@@ -185,10 +199,10 @@ class IsingApp:
         )
         y += button_h + 10
 
-        self.live_button = Button(
-            pygame.Rect(x, y, w, button_h),
-            text="Back to Live",
-        )
+        # self.live_button = Button(
+        #     pygame.Rect(x, y, w, button_h),
+        #     text="Back to Live",
+        # )
 
         # --- Sweep control buttons (bottom) ---
         btn_gap = 10
@@ -198,6 +212,16 @@ class IsingApp:
 
         btn_gap = 10
         btn_w_half = (w - btn_gap) // 2
+
+        self.save_button = Button(
+            pygame.Rect(x, 0, btn_w_half, button_h),
+            text="Save & Back",
+        )
+
+        self.discard_button = Button(
+            pygame.Rect(x + btn_w_half + btn_gap, 0, btn_w_half, button_h),
+            text="Discard & Back",
+        )
 
         # temporary y (will be overridden in _draw)
         self.pause_sweep_button = ToggleButton(
@@ -351,13 +375,33 @@ class IsingApp:
                 self.simulation_running = False
 
             # Back to live (existing)
-            if self.live_button.handle_event(event):
+            # if self.live_button.handle_event(event):
+            #     self.mode = "LIVE"
+            #     self.sweeping = False
+            #     self.sweep_paused = False
+            #     self.sweep_results = None
+            #     self.sweep_progress = 0.0
+            #     self.simulation_running = False
+
+            # Save & Back
+            if self.save_button.handle_event(event, disabled=self.sweeping):
+                sweep_data = {
+                    "id": time.time(),
+                    "T": list(self.sweep_results[0]),
+                    "C": list(self.sweep_results[1]),
+                    "chi": list(self.sweep_results[2]),
+                    "label": time.strftime("%H:%M:%S"),
+                    "color": self.sweep_colors[self.sweep_counter % len(self.sweep_colors)],
+                }
+
+                self.saved_sweeps.append(sweep_data)
+                self.sweep_counter += 1
+
                 self.mode = "LIVE"
-                self.sweeping = False
-                self.sweep_paused = False
-                self.sweep_results = None
-                self.sweep_progress = 0.0
-                self.simulation_running = False
+
+            # Discard & Back
+            if self.discard_button.handle_event(event, disabled=self.sweeping):
+                self.mode = "LIVE"
 
             return
         # Start / Pause toggle
@@ -426,11 +470,26 @@ class IsingApp:
             self.sweep_progress = 0.0
         
         # Back to live mode
-        if self.live_button.handle_event(event):
-            self.mode = "LIVE"
-            self.simulation_running = False
-            self.sweep_results = None
-            self.sweep_progress = 0.0
+        # if self.live_button.handle_event(event):
+        #     self.mode = "LIVE"
+        #     self.simulation_running = False
+        #     self.sweep_results = None
+        #     self.sweep_progress = 0.0
+
+        if self.mode == "LIVE":
+            x = self.controls_left + 10
+            start_y = self.lattice_selector.rect.bottom + 100
+
+            for i, sweep in enumerate(self.saved_sweeps):
+                y = start_y + i * 25
+                box_rect = pygame.Rect(x, y, 14, 14)
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if box_rect.collidepoint(event.pos):
+                        if sweep["id"] in self.selected_sweeps:
+                            self.selected_sweeps.remove(sweep["id"])
+                        else:
+                            self.selected_sweeps.add(sweep["id"])
 
     # --------------------------------------------------------------------- simulation update
 
@@ -583,6 +642,65 @@ class IsingApp:
         return results_T, results_C, results_chi
     # --------------------------------------------------------------------- drawing
 
+    def _draw_saved_sweeps(self):
+        selected = [s for s in self.saved_sweeps if s["id"] in self.selected_sweeps]
+        if not selected:
+            return
+
+        label = self.font.render("C(T)", True, config.TEXT_COLOR)
+        self.screen.blit(label, (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 22))
+
+        label = self.font.render("χ(T)", True, config.TEXT_COLOR)
+        self.screen.blit(label, (self.sweep_chi_plot_rect.x, self.sweep_chi_plot_rect.y - 22))
+        
+        # --- draw plot backgrounds + borders ---
+        pygame.draw.rect(self.screen, config.PLOT_BG_COLOR, self.magnetization_plot_rect)
+        pygame.draw.rect(self.screen, config.PLOT_BORDER_COLOR, self.magnetization_plot_rect, 1)
+
+        pygame.draw.rect(self.screen, config.PLOT_BG_COLOR, self.sweep_chi_plot_rect)
+        pygame.draw.rect(self.screen, config.PLOT_BORDER_COLOR, self.sweep_chi_plot_rect, 1)
+
+        # --- global scaling ---
+        all_C = [v for s in selected for v in s["C"]]
+        all_chi = [v for s in selected for v in s["chi"]]
+
+        self._draw_multi_curve(selected, "C", self.magnetization_plot_rect, all_C)
+        self._draw_multi_curve(selected, "chi", self.sweep_chi_plot_rect, all_chi)
+
+    def _draw_multi_curve(self, sweeps, key, rect, all_values):
+        min_val = min(all_values)
+        max_val = max(all_values)
+        span = max(max_val - min_val, 1e-6)
+
+        for sweep in sweeps:
+            data = sweep[key]
+            if len(data) < 2:
+                continue
+
+            points = []
+            for i, val in enumerate(data):
+                x = rect.x + i * rect.width / len(data)
+                y = rect.bottom - (val - min_val) / span * rect.height
+                points.append((x, y))
+
+            pygame.draw.lines(self.screen, sweep["color"], False, points, 2)
+
+    def _draw_curve(self, data, rect, color):
+        if len(data) < 2:
+            return
+
+        min_val = min(data)
+        max_val = max(data)
+        span = max(max_val - min_val, 1e-6)
+
+        points = []
+        for i, val in enumerate(data):
+            x = rect.x + i * rect.width / len(data)
+            y = rect.bottom - (val - min_val) / span * rect.height
+            points.append((x, y))
+
+        pygame.draw.lines(self.screen, color, False, points, 2)
+
     def _draw_sweep_plots(self):
         T_vals, C_vals, chi_vals = self.sweep_results
 
@@ -609,6 +727,27 @@ class IsingApp:
 
         # --- χ(T) plot ---
         self.sweep_chi_plot.draw(self.screen, self.sweep_chi_plot_rect)
+
+    def _draw_sweep_list(self):
+        start_y = self.lattice_selector.rect.bottom + 100
+        x = self.controls_left + 10
+
+        for i, sweep in enumerate(self.saved_sweeps):
+            y = start_y + i * 25
+
+            # checkbox
+            box_rect = pygame.Rect(x, y, 14, 14)
+            pygame.draw.rect(self.screen, (200, 200, 200), box_rect, 1)
+
+            if sweep["id"] in self.selected_sweeps:
+                pygame.draw.line(self.screen, (200, 200, 200),
+                                (x, y), (x + 14, y + 14), 2)
+                pygame.draw.line(self.screen, (200, 200, 200),
+                                (x + 14, y), (x, y + 14), 2)
+
+            # label
+            label = self.small_font.render(sweep["label"], True, config.TEXT_COLOR)
+            self.screen.blit(label, (x + 20, y - 2))
 
     def _draw(self) -> None:
         controls_disabled = (self.mode == "SWEEP")
@@ -671,7 +810,7 @@ class IsingApp:
 
             live_plot_rect = pygame.Rect(
                 bar_x,
-                bar_y - 200,   # sits above buttons/status
+                bar_y - 300,   # sits above buttons/status
                 bar_w,
                 100,
             )
@@ -682,6 +821,11 @@ class IsingApp:
 
             button_y = bar_y - 60  # 40 pixels above bar
 
+            save_y = button_y - 45
+
+            self.save_button.rect.topleft = (bar_x, save_y)
+            self.discard_button.rect.topleft = (bar_x + btn_w_half + btn_gap, save_y)
+
             self.pause_sweep_button.rect.topleft = (bar_x, button_y)
             self.stop_sweep_button.rect.topleft = (bar_x + btn_w_half + btn_gap, button_y)
 
@@ -689,14 +833,18 @@ class IsingApp:
             self.pause_sweep_button.rect.width = btn_w_half
             self.stop_sweep_button.rect.width = btn_w_half
 
-            # Draw sweep control buttons
+            sweep_done = not self.sweeping
+            self.save_button.draw(self.screen, self.font, disabled=not sweep_done)
+            self.discard_button.draw(self.screen, self.font, disabled=not sweep_done)
+
             self.pause_sweep_button.draw(
                 self.screen,
                 self.font,
                 active=self.pause_sweep_button.toggled,
+                disabled=sweep_done,
             )
 
-            self.stop_sweep_button.draw(self.screen, self.font)
+            self.stop_sweep_button.draw(self.screen, self.font, disabled=sweep_done)
 
             # Draw progress bar background
             pygame.draw.rect(self.screen, (80, 80, 80), (bar_x, bar_y, bar_w, bar_h))
@@ -724,7 +872,7 @@ class IsingApp:
             status_text = self.font.render(status_str, True, config.TEXT_COLOR)
 
             # Position ABOVE buttons (which are above the bar)
-            status_y = button_y - 22
+            status_y = button_y - 65
             self.screen.blit(status_text, (bar_x, status_y))
 
             # Optional label
@@ -732,92 +880,110 @@ class IsingApp:
             text = self.font.render(f"Sweep: {pct}%", True, config.TEXT_COLOR)
             self.screen.blit(text, (bar_x, bar_y - 20))
 
-            self.live_button.draw(self.screen, self.font)
+            # self.live_button.draw(self.screen, self.font)
 
             pygame.display.flip()
             return
 
-        # Magnetization title (left)
-        label = self.font.render("Magnetization", True, config.TEXT_COLOR)
-        self.screen.blit(
-            label,
-            (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 22),
-        )
+        self._draw_sweep_list()
 
-        # Magnetization value (right)
-        value = self.font.render(f"M = {m:.3f}", True, config.TEXT_COLOR)
-        value_rect = value.get_rect()
-        value_rect.topright = (
-            self.magnetization_plot_rect.right,
-            self.magnetization_plot_rect.y - 22,
-        )
-        self.screen.blit(value, value_rect)
+        if self.selected_sweeps:
+            # --- CLEAR ONLY PLOTS PANEL ---
+            pygame.draw.rect(
+                self.screen,
+                config.PANEL_BG_COLOR,
+                pygame.Rect(self.plots_left, 0, config.PANEL_WIDTH, config.WINDOW_HEIGHT),
+            )
 
-        # Plot
-        self.m_plot.draw(self.screen, self.magnetization_plot_rect)
+            # --- Draw saved sweeps ONLY ---
+            self._draw_saved_sweeps()
 
-        # Absolute Magnetization title (left)
-        label = self.font.render("|M|", True, config.TEXT_COLOR)
-        self.screen.blit(
-            label,
-            (self.abs_m_plot_rect.x, self.abs_m_plot_rect.y - 22),
-        )
-
-        # Value (right)
-        value = self.font.render(f"|M| = {abs(m):.3f}", True, config.TEXT_COLOR)
-        value_rect = value.get_rect()
-        value_rect.topright = (
-            self.abs_m_plot_rect.right,
-            self.abs_m_plot_rect.y - 22,
-        )
-        self.screen.blit(value, value_rect)
-
-        # Plot
-        self.abs_m_plot.draw(self.screen, self.abs_m_plot_rect)
-
-        # Energy title (left)
-        label = self.font.render("Energy", True, config.TEXT_COLOR)
-        self.screen.blit(
-            label,
-            (self.energy_plot_rect.x, self.energy_plot_rect.y - 22),
-        )
-
-        # Energy value (right)
-        value = self.font.render(f"E / spin = {e:.3f}", True, config.TEXT_COLOR)
-        value_rect = value.get_rect()
-        value_rect.topright = (
-            self.energy_plot_rect.right,
-            self.energy_plot_rect.y - 22,
-        )
-        self.screen.blit(value, value_rect)
-
-        # Plot
-        self.e_plot.draw(self.screen, self.energy_plot_rect)
-
-        # Derived title
-        label = self.font.render("Derived", True, config.TEXT_COLOR)
-        self.screen.blit(
-            label,
-            (self.derived_plot_rect.x, self.derived_plot_rect.y - 22),
-        )
-
-        # Value (right)
-        if self.derived_mode == "C":
-            val = self.c_history[-1] if self.c_history else 0.0
-            text = f"C = {val:.3f}"
         else:
-            val = self.chi_history[-1] if self.chi_history else 0.0
-            text = f"χ = {val:.3f}"
+            # Draw current live data plots
+            # Magnetization title (left)
+            label = self.font.render("Magnetization", True, config.TEXT_COLOR)
+            self.screen.blit(
+                label,
+                (self.magnetization_plot_rect.x, self.magnetization_plot_rect.y - 22),
+            )
 
-        value = self.font.render(text, True, config.TEXT_COLOR)
-        value_rect = value.get_rect()
-        value_rect.topright = (
-            self.derived_plot_rect.right,
-            self.derived_plot_rect.y - 22,
-        )
-        self.screen.blit(value, value_rect)
+            # Magnetization value (right)
+            value = self.font.render(f"M = {m:.3f}", True, config.TEXT_COLOR)
+            value_rect = value.get_rect()
+            value_rect.topright = (
+                self.magnetization_plot_rect.right,
+                self.magnetization_plot_rect.y - 22,
+            )
+            self.screen.blit(value, value_rect)
 
-        # Plot
-        self.derived_plot.draw(self.screen, self.derived_plot_rect)
+            # Plot
+            self.m_plot.draw(self.screen, self.magnetization_plot_rect)
+
+            # Absolute Magnetization title (left)
+            label = self.font.render("|M|", True, config.TEXT_COLOR)
+            self.screen.blit(
+                label,
+                (self.abs_m_plot_rect.x, self.abs_m_plot_rect.y - 22),
+            )
+
+            # Value (right)
+            value = self.font.render(f"|M| = {abs(m):.3f}", True, config.TEXT_COLOR)
+            value_rect = value.get_rect()
+            value_rect.topright = (
+                self.abs_m_plot_rect.right,
+                self.abs_m_plot_rect.y - 22,
+            )
+            self.screen.blit(value, value_rect)
+
+            # Plot
+            self.abs_m_plot.draw(self.screen, self.abs_m_plot_rect)
+
+            # Energy title (left)
+            label = self.font.render("Energy", True, config.TEXT_COLOR)
+            self.screen.blit(
+                label,
+                (self.energy_plot_rect.x, self.energy_plot_rect.y - 22),
+            )
+
+            # Energy value (right)
+            value = self.font.render(f"E / spin = {e:.3f}", True, config.TEXT_COLOR)
+            value_rect = value.get_rect()
+            value_rect.topright = (
+                self.energy_plot_rect.right,
+                self.energy_plot_rect.y - 22,
+            )
+            self.screen.blit(value, value_rect)
+
+            # Plot
+            self.e_plot.draw(self.screen, self.energy_plot_rect)
+
+            # Derived title
+            label = self.font.render("Derived", True, config.TEXT_COLOR)
+            self.screen.blit(
+                label,
+                (self.derived_plot_rect.x, self.derived_plot_rect.y - 22),
+            )
+
+            # Value (right)
+            if self.derived_mode == "C":
+                val = self.c_history[-1] if self.c_history else 0.0
+                text = f"C = {val:.3f}"
+            else:
+                val = self.chi_history[-1] if self.chi_history else 0.0
+                text = f"χ = {val:.3f}"
+
+            value = self.font.render(text, True, config.TEXT_COLOR)
+            value_rect = value.get_rect()
+            value_rect.topright = (
+                self.derived_plot_rect.right,
+                self.derived_plot_rect.y - 22,
+            )
+            self.screen.blit(value, value_rect)
+
+            # Plot
+            self.derived_plot.draw(self.screen, self.derived_plot_rect)
+
+
+        
 
         pygame.display.flip()
