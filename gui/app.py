@@ -199,10 +199,17 @@ class IsingApp:
         )
         y += button_h + 10
 
-        # self.live_button = Button(
-        #     pygame.Rect(x, y, w, button_h),
-        #     text="Back to Live",
-        # )
+        self.scroll_offset = 0
+        self.scroll_speed = 20  # pixels per scroll
+        self.list_item_height = 25
+
+        # Define list box rect
+        self.sweep_list_rect = pygame.Rect(
+            self.controls_left + 10,
+            self.lattice_selector.rect.bottom + 100,
+            config.PANEL_WIDTH - 20,
+            100,  # visible height (adjust later)
+        )
 
         # --- Sweep control buttons (bottom) ---
         btn_gap = 10
@@ -360,6 +367,7 @@ class IsingApp:
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
 
         if self.mode == "SWEEP":
+
             # Pause / Resume
             if self.pause_sweep_button.handle_event(event):
                 self.sweep_paused = not self.sweep_paused
@@ -390,7 +398,7 @@ class IsingApp:
                     "T": list(self.sweep_results[0]),
                     "C": list(self.sweep_results[1]),
                     "chi": list(self.sweep_results[2]),
-                    "label": time.strftime("%H:%M:%S"),
+                    "label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                     "color": self.sweep_colors[self.sweep_counter % len(self.sweep_colors)],
                 }
 
@@ -476,20 +484,40 @@ class IsingApp:
         #     self.sweep_results = None
         #     self.sweep_progress = 0.0
 
+        # if self.mode == "LIVE":
+        #     x = self.controls_left + 10
+        #     start_y = self.lattice_selector.rect.bottom + 100
+
+        #     for i, sweep in enumerate(self.saved_sweeps):
+        #         y = start_y + i * 25
+        #         box_rect = pygame.Rect(x, y, 14, 14)
+
+        #         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        #             if box_rect.collidepoint(event.pos):
+        #                 if sweep["id"] in self.selected_sweeps:
+        #                     self.selected_sweeps.remove(sweep["id"])
+        #                 else:
+        #                     self.selected_sweeps.add(sweep["id"])
         if self.mode == "LIVE":
-            x = self.controls_left + 10
-            start_y = self.lattice_selector.rect.bottom + 100
+            if event.type == pygame.MOUSEWHEEL:
+                self.scroll_offset -= event.y * self.scroll_speed
 
-            for i, sweep in enumerate(self.saved_sweeps):
-                y = start_y + i * 25
-                box_rect = pygame.Rect(x, y, 14, 14)
+                max_offset = max(0, len(self.saved_sweeps) * self.list_item_height - self.sweep_list_rect.height)
+                self.scroll_offset = max(0, min(self.scroll_offset, max_offset))
+            
+        if self.mode == "LIVE" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.sweep_list_rect.collidepoint(event.pos):
 
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if box_rect.collidepoint(event.pos):
-                        if sweep["id"] in self.selected_sweeps:
-                            self.selected_sweeps.remove(sweep["id"])
-                        else:
-                            self.selected_sweeps.add(sweep["id"])
+                rel_y = event.pos[1] - self.sweep_list_rect.y + self.scroll_offset
+                index = rel_y // self.list_item_height
+
+                if 0 <= index < len(self.saved_sweeps):
+                    sweep = self.saved_sweeps[index]
+
+                    if sweep["id"] in self.selected_sweeps:
+                        self.selected_sweeps.remove(sweep["id"])
+                    else:
+                        self.selected_sweeps.add(sweep["id"])
 
     # --------------------------------------------------------------------- simulation update
 
@@ -729,25 +757,85 @@ class IsingApp:
         self.sweep_chi_plot.draw(self.screen, self.sweep_chi_plot_rect)
 
     def _draw_sweep_list(self):
-        start_y = self.lattice_selector.rect.bottom + 100
-        x = self.controls_left + 10
+        rect = self.sweep_list_rect
+
+        # --- Background ---
+        pygame.draw.rect(self.screen, (20, 20, 40), rect)
+        pygame.draw.rect(self.screen, (200, 200, 200), rect, 1)
+
+        # --- Clipping (prevents drawing outside box) ---
+        prev_clip = self.screen.get_clip()
+        self.screen.set_clip(rect)
+
+        start_y = rect.y - self.scroll_offset
 
         for i, sweep in enumerate(self.saved_sweeps):
-            y = start_y + i * 25
+            y = start_y + i * self.list_item_height
+
+            # Skip if outside visible area (optimization)
+            if y < rect.y - self.list_item_height or y > rect.bottom:
+                continue
+
+            x = rect.x + 5
+
+            if sweep["id"] in self.selected_sweeps:
+                pygame.draw.rect(
+                    self.screen,
+                    (60, 60, 100),
+                    pygame.Rect(rect.x, y, rect.width, self.list_item_height),
+                )
 
             # checkbox
-            box_rect = pygame.Rect(x, y, 14, 14)
+            box_rect = pygame.Rect(x, y + 5, 14, 14)
             pygame.draw.rect(self.screen, (200, 200, 200), box_rect, 1)
 
             if sweep["id"] in self.selected_sweeps:
                 pygame.draw.line(self.screen, (200, 200, 200),
-                                (x, y), (x + 14, y + 14), 2)
+                                (box_rect.left, box_rect.top),
+                                (box_rect.right, box_rect.bottom), 2)
                 pygame.draw.line(self.screen, (200, 200, 200),
-                                (x + 14, y), (x, y + 14), 2)
+                                (box_rect.right, box_rect.top),
+                                (box_rect.left, box_rect.bottom), 2)
+
+            # --- COLOR SWATCH ---
+            swatch_size = 10
+            swatch_x = box_rect.right + 6
+            swatch_y = y + 7
+
+            pygame.draw.rect(
+                self.screen,
+                sweep["color"],
+                pygame.Rect(swatch_x, swatch_y, swatch_size, swatch_size),
+            )
+
+            # optional border (makes it pop on dark bg)
+            pygame.draw.rect(
+                self.screen,
+                (200, 200, 200),
+                pygame.Rect(swatch_x, swatch_y, swatch_size, swatch_size),
+                1
+            )
 
             # label
-            label = self.small_font.render(sweep["label"], True, config.TEXT_COLOR)
-            self.screen.blit(label, (x + 20, y - 2))
+            label = self.font.render(sweep["label"], True, config.TEXT_COLOR)
+            self.screen.blit(label, (swatch_x + swatch_size + 6, y + 3))
+
+        # restore clipping
+        self.screen.set_clip(prev_clip)
+
+        content_height = len(self.saved_sweeps) * self.list_item_height
+
+        if content_height > rect.height:
+            scrollbar_width = 6
+
+            bar_height = rect.height * (rect.height / content_height)
+            bar_y = rect.y + (self.scroll_offset / content_height) * rect.height
+
+            pygame.draw.rect(
+                self.screen,
+                (120, 180, 220),
+                pygame.Rect(rect.right - scrollbar_width, bar_y, scrollbar_width, bar_height),
+            )
 
     def _draw(self) -> None:
         controls_disabled = (self.mode == "SWEEP")
