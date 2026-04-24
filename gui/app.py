@@ -5,7 +5,7 @@ from typing import Optional
 import pygame
 
 from ising.metropolis import MetropolisIsing
-from gui.controls import Button, LatticeSizeSelector, Slider, ToggleButton
+from gui.controls import Button, LatticeSizeSelector, RadioButtonGroup, Slider, ToggleButton
 from gui.renderer import LatticeRenderer
 from gui.plots import TimeSeriesPlot
 from utils import config
@@ -17,6 +17,7 @@ import tkinter as tk
 from tkinter import filedialog
 import csv
 import sys
+import threading
 
 
 class IsingApp:
@@ -190,6 +191,22 @@ class IsingApp:
         )
         y += selector_height + 10
 
+        # --- Optimization selector ---
+        self.optim_label_pos = (x, y)
+
+        y += 25
+
+        self.optim_selector = RadioButtonGroup(
+            ["None", "CPU", "GPU"],
+            position=(x + 5, y),
+            spacing=80,
+            default=0,
+        )
+
+        self.optim_mode = "None"
+
+        y += 20
+
         self.toggle_button = Button(
             pygame.Rect(x, y, w, button_h),
             text="Show χ",
@@ -201,7 +218,7 @@ class IsingApp:
             pygame.Rect(x, y, w, button_h),
             text="Run Temp Sweep",
         )
-        y += button_h + 10
+        y += button_h + 20
 
         self.scroll_offset = 0
         self.scroll_speed = 20  # pixels per scroll
@@ -210,7 +227,7 @@ class IsingApp:
         # Define list box rect
         self.sweep_list_rect = pygame.Rect(
             self.controls_left + 10,
-            self.lattice_selector.rect.bottom + 100,
+            self.lattice_selector.rect.bottom + 140,
             config.PANEL_WIDTH - 20,
             100,  # visible height (adjust later)
         )
@@ -463,15 +480,6 @@ class IsingApp:
                 self.sweep_progress = 0.0
                 self.simulation_running = False
 
-            # Back to live (existing)
-            # if self.live_button.handle_event(event):
-            #     self.mode = "LIVE"
-            #     self.sweeping = False
-            #     self.sweep_paused = False
-            #     self.sweep_results = None
-            #     self.sweep_progress = 0.0
-            #     self.simulation_running = False
-
             # Save & Back
             if self.save_button.handle_event(event, disabled=self.sweeping):
                 sweep_data = {
@@ -546,6 +554,11 @@ class IsingApp:
             #self.plot.clear()
             self.m_plot.clear()
 
+        choice = self.optim_selector.handle_event(event, disabled=(self.mode == "SWEEP"))
+        if choice is not None:
+            self.optim_mode = choice
+            self.sim.set_backend(choice)   # we’ll define this next
+
         if self.toggle_button.handle_event(event, disabled=(self.mode == "SWEEP")):
             if self.derived_mode == "C":
                 self.derived_mode = "CHI"
@@ -567,27 +580,6 @@ class IsingApp:
             self.sweep_results = ([], [], [])
             self.sweep_progress = 0.0
         
-        # Back to live mode
-        # if self.live_button.handle_event(event):
-        #     self.mode = "LIVE"
-        #     self.simulation_running = False
-        #     self.sweep_results = None
-        #     self.sweep_progress = 0.0
-
-        # if self.mode == "LIVE":
-        #     x = self.controls_left + 10
-        #     start_y = self.lattice_selector.rect.bottom + 100
-
-        #     for i, sweep in enumerate(self.saved_sweeps):
-        #         y = start_y + i * 25
-        #         box_rect = pygame.Rect(x, y, 14, 14)
-
-        #         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-        #             if box_rect.collidepoint(event.pos):
-        #                 if sweep["id"] in self.selected_sweeps:
-        #                     self.selected_sweeps.remove(sweep["id"])
-        #                 else:
-        #                     self.selected_sweeps.add(sweep["id"])
         if self.mode == "LIVE":
             if event.type == pygame.MOUSEWHEEL:
                 self.scroll_offset -= event.y * self.scroll_speed
@@ -618,7 +610,7 @@ class IsingApp:
     def _update_sweep(self):
         if self.sweep_paused:
             return
-        
+
         T_vals, C_vals, chi_vals = self.sweep_results
 
         if self.sweep_index >= len(self.sweep_temps):
@@ -627,22 +619,30 @@ class IsingApp:
 
         T = self.sweep_temps[self.sweep_index]
 
+        # --- Adaptive schedule ---
         if 2.0 < T < 2.6:
             equil_steps = 600
+            measure_steps = 1000
+            subsample = 10
         else:
-            equil_steps = 300
+            equil_steps = 150
+            measure_steps = 300
+            subsample = 20
 
+        # --- Equilibration phase ---
         if self.sweep_phase == "equil":
             if self.sweep_step == 0:
+                self._temp_start_time = time.time()
                 self.sim.set_temperature(T)
 
-                # Only reset ONCE at the start of sweep
+                # Only reset at very beginning of full sweep
                 if self.sweep_index == 0:
                     self.sim.reset("random")
-                # --- reset mini trace ---
+
+
                 self.sweep_live_plot.clear()
 
-            self.sim.sweep()
+            self.sim.sweep(fraction=1.0)
             self.sweep_live_plot.add_point(self.sim.energy_per_spin())
             self.sweep_step += 1
 
@@ -651,19 +651,21 @@ class IsingApp:
                 self.sweep_step = 0
                 self.stats.clear()
 
+        # --- Measurement phase ---
         elif self.sweep_phase == "measure":
-            self.sim.sweep()
+            self.sim.sweep(fraction=1.0)
             self.sweep_live_plot.add_point(self.sim.energy_per_spin())
 
-            if self.sweep_step % self.SUBSAMPLE == 0:
+            if self.sweep_step % subsample == 0:
                 e = self.sim.energy_per_spin()
                 m = self.sim.magnetization()
                 self.stats.add(e, m)
 
             self.sweep_step += 1
 
-            if self.sweep_step >= self.MEASURE_STEPS:
+            if self.sweep_step >= measure_steps:
                 N = self.sim.size * self.sim.size
+
                 C = self.stats.heat_capacity(T, N)
                 chi = self.stats.susceptibility(T, N)
 
@@ -677,6 +679,9 @@ class IsingApp:
 
                 self.sweep_progress = self.sweep_index / len(self.sweep_temps)
 
+                elapsed = time.time() - self._temp_start_time
+                print(f"T={T:.2f} took {elapsed:.2f}s")
+
     def _update_simulation(self) -> None:
         if self.mode == "SWEEP" and self.sweeping:
             self._update_sweep()
@@ -688,7 +693,7 @@ class IsingApp:
         steps_per_frame = max(1, min(steps_per_frame, config.MAX_STEPS_PER_FRAME))
 
         for _ in range(steps_per_frame):
-            self.sim.sweep()
+            self.sim.sweep(fraction=1.0)
 
         # Record magnetization and energy for plotting
         m = self.sim.magnetization()
@@ -736,13 +741,13 @@ class IsingApp:
 
             # --- Equilibration ---
             for _ in range(EQUIL_STEPS):
-                self.sim.sweep()
+                self.sim.sweep(fraction=1.0)
 
             # --- Measurement ---
             self.stats.clear()
 
             for step in range(MEASURE_STEPS):
-                self.sim.sweep()
+                self.sim.sweep(fraction=1.0)
 
                 # Subsampling (VERY important)
                 if step % SUBSAMPLE == 0:
@@ -969,6 +974,17 @@ class IsingApp:
         self.toggle_button.draw(self.screen, self.font, disabled=controls_disabled)
         self.sweep_button.draw(self.screen, self.font, disabled=controls_disabled)
 
+        # Optimization label
+        label = self.font.render("Optimization", True, config.TEXT_COLOR)
+        self.screen.blit(label, self.optim_label_pos)
+
+        # Radio buttons
+        self.optim_selector.draw(
+            self.screen,
+            self.font,
+            disabled=(self.mode == "SWEEP"),
+        )
+
         N_spins = self.sim.size * self.sim.size
 
         c = self.stats.heat_capacity(self.sim.temperature, N_spins)
@@ -1172,8 +1188,5 @@ class IsingApp:
 
             # Plot
             self.derived_plot.draw(self.screen, self.derived_plot_rect)
-
-
-        
 
         pygame.display.flip()

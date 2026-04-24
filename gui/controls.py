@@ -212,3 +212,51 @@ class LatticeSizeSelector:
                 self.current_size = size
                 return size
         return None
+    
+class RadioButtonGroup:
+    def __init__(self, options, position, spacing=40, default=0):
+        """
+        options: list of strings (["None", "CPU", "GPU"])
+        position: (x, y) start position
+        """
+        self.options = options
+        self.x, self.y = position
+        self.spacing = spacing
+        self.selected = default
+
+        self.radius = 8
+
+    def handle_event(self, event, disabled=False):
+        if disabled:
+            return None
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+
+            for i in range(len(self.options)):
+                cx = self.x + i * self.spacing
+                cy = self.y
+
+                if (mx - cx) ** 2 + (my - cy) ** 2 <= self.radius ** 2:
+                    self.selected = i
+                    return self.options[i]
+
+        return None
+
+    def draw(self, screen, font, disabled=False):
+        for i, label in enumerate(self.options):
+            cx = self.x + i * self.spacing
+            cy = self.y
+
+            color = (180, 180, 180) if not disabled else (100, 100, 100)
+
+            # outer circle
+            pygame.draw.circle(screen, color, (cx, cy), self.radius, 1)
+
+            # filled if selected
+            if i == self.selected:
+                pygame.draw.circle(screen, color, (cx, cy), self.radius - 3)
+
+            # label
+            text = font.render(label, True, color)
+            screen.blit(text, (cx + 15, cy - 8))
