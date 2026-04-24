@@ -13,6 +13,10 @@ from utils import rng as rng_utils
 from ising.statistics import RunningStats
 import numpy as np
 import time
+import tkinter as tk
+from tkinter import filedialog
+import csv
+import sys
 
 
 class IsingApp:
@@ -211,6 +215,16 @@ class IsingApp:
             100,  # visible height (adjust later)
         )
 
+        self.export_button = Button(
+            pygame.Rect(
+                self.sweep_list_rect.x,
+                self.sweep_list_rect.bottom + 10,
+                self.sweep_list_rect.width,
+                30,
+            ),
+            text="Export Selected (CSV)",
+        )
+
         # --- Sweep control buttons (bottom) ---
         btn_gap = 10
         btn_w_half = (w - btn_gap) // 2
@@ -364,6 +378,73 @@ class IsingApp:
                 return
             self._handle_controls_event(event)
 
+    def _get_save_path(self):
+    
+        if sys.platform == "darwin":
+            # --- macOS: use osascript ---
+            import subprocess
+
+            script = '''
+            set filePath to POSIX path of (choose file name with prompt "Save sweep data as CSV" default name "sweep_data.csv")
+            return filePath
+            '''
+
+            try:
+                path = subprocess.check_output(
+                    ["osascript", "-e", script]
+                ).decode("utf-8").strip()
+                return path
+            except subprocess.CalledProcessError:
+                return None
+
+        else:
+            # --- Windows / Linux: use tkinter safely ---
+
+            root = tk.Tk()
+            root.withdraw()           # hide main window
+            root.attributes("-topmost", True)  # bring dialog to front
+
+            path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv")],
+                title="Save sweep data"
+            )
+
+            root.destroy()
+            return path if path else None
+
+    def _export_selected_sweeps(self):
+
+        file_path = self._get_save_path()
+        if not file_path:
+            return
+
+        selected = [s for s in self.saved_sweeps if s["id"] in self.selected_sweeps]
+
+        with open(file_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "sweep_label", "temperature", "C", "chi",
+                "N", "J", "h", "equil_steps", "measure_steps", "subsample"
+            ])
+
+            for sweep in selected:
+                meta = sweep["meta"]
+
+                for T, C, chi in zip(sweep["T"], sweep["C"], sweep["chi"]):
+                    writer.writerow([
+                        sweep["label"],
+                        T,
+                        C,
+                        chi,
+                        meta["N"],
+                        meta["J"],
+                        meta["h"],
+                        meta["equil_steps"],
+                        meta["measure_steps"],
+                        meta["subsample"],
+                    ])
+
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
 
         if self.mode == "SWEEP":
@@ -400,6 +481,15 @@ class IsingApp:
                     "chi": list(self.sweep_results[2]),
                     "label": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
                     "color": self.sweep_colors[self.sweep_counter % len(self.sweep_colors)],
+                    # --- METADATA ---
+                    "meta": {
+                        "N": self.sim.size,
+                        "J": self.sim.J,
+                        "h": self.sim.h,
+                        "equil_steps": self.EQUIL_STEPS,
+                        "measure_steps": self.MEASURE_STEPS,
+                        "subsample": self.SUBSAMPLE,
+                    }
                 }
 
                 self.saved_sweeps.append(sweep_data)
@@ -518,6 +608,10 @@ class IsingApp:
                         self.selected_sweeps.remove(sweep["id"])
                     else:
                         self.selected_sweeps.add(sweep["id"])
+
+        if self.mode == "LIVE":
+            if self.export_button.handle_event(event, disabled=(len(self.selected_sweeps) == 0)):
+                self._export_selected_sweeps()
 
     # --------------------------------------------------------------------- simulation update
 
@@ -974,6 +1068,14 @@ class IsingApp:
             return
 
         self._draw_sweep_list()
+
+        export_disabled = (len(self.selected_sweeps) == 0)
+
+        self.export_button.draw(
+            self.screen,
+            self.font,
+            disabled=export_disabled
+        )
 
         if self.selected_sweeps:
             # --- CLEAR ONLY PLOTS PANEL ---
