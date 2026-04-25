@@ -40,28 +40,33 @@ class LatticeRenderer:
         if N <= 0:
             return
 
-        # Choose cell size so lattice fits into rect
-        cell_size = min(self.rect.width // N, self.rect.height // N)
+        # --- FLOAT scaling (important fix) ---
+        cell_w = self.rect.width / N
+        cell_h = self.rect.height / N
+        cell_size = min(cell_w, cell_h)
+
         if cell_size <= 0:
             return
 
-        # Center the lattice inside the rect
         lattice_width = cell_size * N
         lattice_height = cell_size * N
 
-        origin_x = self.rect.x + (self.rect.width - lattice_width) // 2
-        origin_y = self.rect.y + (self.rect.height - lattice_height) // 2
+        # --- center lattice ---
+        origin_x = self.rect.x + (self.rect.width - lattice_width) / 2
+        origin_y = self.rect.y + (self.rect.height - lattice_height) / 2
 
         for i in range(N):
             for j in range(N):
                 s = spins[i, j]
-                color: Tuple[int, int, int] = (
+                color = (
                     config.SPIN_UP_COLOR if s > 0 else config.SPIN_DOWN_COLOR
                 )
-                cell_rect = pygame.Rect(
-                    origin_x + j * cell_size,
-                    origin_y + i * cell_size,
-                    cell_size,
-                    cell_size,
+
+                x = origin_x + j * cell_size
+                y = origin_y + i * cell_size
+
+                pygame.draw.rect(
+                    surface,
+                    color,
+                    pygame.Rect(int(x), int(y), int(cell_size) + 1, int(cell_size) + 1),
                 )
-                pygame.draw.rect(surface, color, cell_rect)

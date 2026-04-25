@@ -5,7 +5,7 @@ from typing import Optional
 import pygame
 
 from ising.metropolis import MetropolisIsing
-from gui.controls import Button, LatticeSizeSelector, RadioButtonGroup, Slider, ToggleButton
+from gui.controls import Button, LatticeSizeSelector, RadioButtonGroup, Slider, ToggleButton, Dropdown
 from gui.renderer import LatticeRenderer
 from gui.plots import TimeSeriesPlot
 from utils import config
@@ -50,6 +50,10 @@ class IsingApp:
         self.sweep_index = 0
         self.sweep_phase = "equil"   # or "measure"
         self.sweep_step = 0
+
+        self.perf_last_time = time.time()
+        self.perf_sweeps = 0
+        self.perf_sps = 0.0
 
         self.EQUIL_STEPS = 300
         self.MEASURE_STEPS = 800
@@ -112,13 +116,6 @@ class IsingApp:
             text_on="Pause",
         )
         y += button_h + 10
-
-        # Reset button
-        # self.reset_button = Button(
-        #     pygame.Rect(x, y, w, button_h),
-        #     text="Reset",
-        # )
-        # --- Reset buttons (split) ---
 
         button_w_half = (w - 10) // 2
 
@@ -183,13 +180,12 @@ class IsingApp:
         y += 60
 
         # Lattice size selector
-        selector_height = 28
-        self.lattice_selector = LatticeSizeSelector(
-            rect=pygame.Rect(x, y, w, selector_height),
-            sizes=config.LATTICE_SIZES,
-            default=config.DEFAULT_LATTICE_SIZE,
+        self.lattice_dropdown = Dropdown(
+            rect=pygame.Rect(x, y, w, 30),
+            options= [32, 64, 128, 256, 384, 512],   # extendable
+            default_index=1,  # 64
         )
-        y += selector_height + 10
+        y += 40
 
         # --- Optimization selector ---
         self.optim_label_pos = (x, y)
@@ -227,7 +223,8 @@ class IsingApp:
         # Define list box rect
         self.sweep_list_rect = pygame.Rect(
             self.controls_left + 10,
-            self.lattice_selector.rect.bottom + 140,
+            #self.lattice_selector.rect.bottom + 140,
+            y,
             config.PANEL_WIDTH - 20,
             100,  # visible height (adjust later)
         )
@@ -245,8 +242,6 @@ class IsingApp:
         # --- Sweep control buttons (bottom) ---
         btn_gap = 10
         btn_w_half = (w - btn_gap) // 2
-
-        #sweep_btn_y = config.WINDOW_HEIGHT - 70  # just above progress bar
 
         btn_gap = 10
         btn_w_half = (w - btn_gap) // 2
@@ -464,6 +459,18 @@ class IsingApp:
 
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
 
+        # Lattice size selector
+        result = self.lattice_dropdown.handle_event(event, disabled=(self.mode == "SWEEP"))
+
+        if result == "BLOCK":
+            return  # stop event propagation
+
+        if result is not None:
+            if result != self.sim.size:
+                self.sim.resize(result)
+                self._clear_data()
+            return
+
         if self.mode == "SWEEP":
 
             # Pause / Resume
@@ -547,12 +554,6 @@ class IsingApp:
         # Steps per frame slider (value used during update)
         self.steps_slider.handle_event(event, disabled=(self.mode == "SWEEP"))
 
-        # Lattice size selector
-        new_size = self.lattice_selector.handle_event(event, disabled=(self.mode == "SWEEP"))
-        if new_size is not None and new_size != self.sim.size:
-            self.sim.resize(new_size)
-            #self.plot.clear()
-            self.m_plot.clear()
 
         choice = self.optim_selector.handle_event(event, disabled=(self.mode == "SWEEP"))
         if choice is not None:
@@ -607,6 +608,17 @@ class IsingApp:
 
     # --------------------------------------------------------------------- simulation update
 
+    def _update_performance(self, sweeps=1):
+        self.perf_sweeps += sweeps
+
+        now = time.time()
+        dt = now - self.perf_last_time
+
+        if dt >= 0.5:
+            self.perf_sps = self.perf_sweeps / dt
+            self.perf_sweeps = 0
+            self.perf_last_time = now
+
     def _update_sweep(self):
         if self.sweep_paused:
             return
@@ -643,6 +655,8 @@ class IsingApp:
                 self.sweep_live_plot.clear()
 
             self.sim.sweep(fraction=1.0)
+            self._update_performance(1)
+
             self.sweep_live_plot.add_point(self.sim.energy_per_spin())
             self.sweep_step += 1
 
@@ -654,6 +668,8 @@ class IsingApp:
         # --- Measurement phase ---
         elif self.sweep_phase == "measure":
             self.sim.sweep(fraction=1.0)
+            self._update_performance(1)
+
             self.sweep_live_plot.add_point(self.sim.energy_per_spin())
 
             if self.sweep_step % subsample == 0:
@@ -970,7 +986,6 @@ class IsingApp:
         self.temp_slider.draw(self.screen, self.font, disabled=controls_disabled)
         self.field_slider.draw(self.screen, self.font, disabled=controls_disabled)
         self.steps_slider.draw(self.screen, self.font, disabled=controls_disabled)
-        self.lattice_selector.draw(self.screen, self.font, disabled=controls_disabled)
         self.toggle_button.draw(self.screen, self.font, disabled=controls_disabled)
         self.sweep_button.draw(self.screen, self.font, disabled=controls_disabled)
 
@@ -1056,6 +1071,25 @@ class IsingApp:
 
             self.sweep_live_plot.draw(self.screen, live_plot_rect)
 
+            # --- Performance metrics (below E(t)) ---
+            perf_y = live_plot_rect.bottom + 10
+
+            sps_text = self.font.render(
+                f"Sweeps/sec: {self.perf_sps:.1f}",
+                True,
+                config.TEXT_COLOR,
+            )
+            self.screen.blit(sps_text, (live_plot_rect.x, perf_y))
+
+            updates = self.perf_sps * (self.sim.size ** 2)
+
+            ups_text = self.font.render(
+                f"Spin updates/sec: {updates / 1e6:.2f}M",
+                True,
+                config.TEXT_COLOR,
+            )
+            self.screen.blit(ups_text, (live_plot_rect.x, perf_y + 20))
+
             # --- Sweep status text (temperature + index) ---
             if self.sweeping and self.sweep_index < len(self.sweep_temps):
                 current_T = self.sweep_temps[self.sweep_index]
@@ -1079,6 +1113,14 @@ class IsingApp:
             self.screen.blit(text, (bar_x, bar_y - 20))
 
             # self.live_button.draw(self.screen, self.font)
+            # --- Draw dropdown even in SWEEP mode ---
+            label = self.font.render("Select Lattice Size", True, (160, 160, 180))
+            self.screen.blit(label, (self.lattice_dropdown.rect.x, self.lattice_dropdown.rect.y - 20))
+            self.lattice_dropdown.draw(
+                self.screen,
+                self.font,
+                disabled=True,   # stays disabled during sweep
+            )
 
             pygame.display.flip()
             return
@@ -1188,5 +1230,10 @@ class IsingApp:
 
             # Plot
             self.derived_plot.draw(self.screen, self.derived_plot_rect)
+        
+        label = self.font.render("Select Lattice Size", True, config.TEXT_COLOR)
+        self.screen.blit(label, (self.lattice_dropdown.rect.x, self.lattice_dropdown.rect.y - 20))
+
+        self.lattice_dropdown.draw(self.screen, self.font, disabled=(self.mode == "SWEEP"))
 
         pygame.display.flip()

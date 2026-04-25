@@ -260,3 +260,114 @@ class RadioButtonGroup:
             # label
             text = font.render(label, True, color)
             screen.blit(text, (cx + 15, cy - 8))
+
+class Dropdown:
+    def __init__(self, rect, options, default_index=0):
+        self.rect = rect
+        self.options = options
+        self.selected_index = default_index
+        self.open = False
+
+        self.item_height = rect.height
+        self.font_color = (230, 230, 230)
+        self.bg_color = (80, 90, 120)
+        self.hover_color = (100, 110, 140)
+
+    def get_value(self):
+        return self.options[self.selected_index]
+
+    def handle_event(self, event, disabled=False):
+        if disabled:
+            return None
+
+        # --- FULL DROPDOWN AREA (for blocking clicks) ---
+        full_rect = pygame.Rect(
+            self.rect.x,
+            self.rect.y,
+            self.rect.width,
+            self.rect.height + len(self.options) * self.item_height,
+        )
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+
+            # --- CLICK ON MAIN BOX ---
+            if self.rect.collidepoint(event.pos):
+                self.open = not self.open
+                return "BLOCK"
+
+            # --- IF OPEN → HANDLE DROPDOWN ---
+            if self.open:
+
+                # Click inside dropdown list
+                for i, option in enumerate(self.options):
+                    item_rect = pygame.Rect(
+                        self.rect.x,
+                        self.rect.y + (i + 1) * self.item_height,
+                        self.rect.width,
+                        self.item_height,
+                    )
+                    if item_rect.collidepoint(event.pos):
+                        self.selected_index = i
+                        self.open = False
+                        return option  # <-- actual selection
+
+                # Click anywhere else → close dropdown
+                if full_rect.collidepoint(event.pos):
+                    self.open = False
+                    return "BLOCK"
+                return "BLOCK"
+
+        return None
+
+    def draw(self, screen, font, disabled=False):
+        # --- MAIN BOX ---
+        pygame.draw.rect(screen, self.bg_color, self.rect, border_radius=6)
+        pygame.draw.rect(screen, (200, 200, 200), self.rect, 1, border_radius=6)
+
+        # --- TEXT ---
+        text = font.render(str(self.options[self.selected_index]), True, self.font_color)
+        screen.blit(text, (self.rect.x + 10, self.rect.y + 5))
+
+        # --- ARROW ---
+        pygame.draw.polygon(
+            screen,
+            self.font_color,
+            [
+                (self.rect.right - 20, self.rect.y + 10),
+                (self.rect.right - 10, self.rect.y + 10),
+                (self.rect.right - 15, self.rect.y + 18),
+            ],
+        )
+
+        # --- DROPDOWN PANEL ---
+        if self.open:
+            dropdown_height = len(self.options) * self.item_height
+
+            panel_rect = pygame.Rect(
+                self.rect.x,
+                self.rect.y + self.rect.height,
+                self.rect.width,
+                dropdown_height,
+            )
+
+            # Solid background (fixes transparency issue)
+            pygame.draw.rect(screen, (60, 70, 100), panel_rect)
+            pygame.draw.rect(screen, (200, 200, 200), panel_rect, 1)
+
+            # --- ITEMS ---
+            for i, option in enumerate(self.options):
+                item_rect = pygame.Rect(
+                    self.rect.x,
+                    self.rect.y + (i + 1) * self.item_height,
+                    self.rect.width,
+                    self.item_height,
+                )
+
+                # Highlight selected item
+                if i == self.selected_index:
+                    pygame.draw.rect(screen, (90, 100, 140), item_rect)
+
+                pygame.draw.rect(screen, (200, 200, 200), item_rect, 1)
+
+                text = font.render(str(option), True, self.font_color)
+                screen.blit(text, (item_rect.x + 10, item_rect.y + 5))
