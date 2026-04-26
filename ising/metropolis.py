@@ -16,7 +16,9 @@ from numpy.random import Generator
 from . import lattice
 from . import observables
 from .kernels import sweep_kernel   # <-- NEW
-
+from .kernels import sweep_kernel_checkerboard
+from numba import cuda
+#from .kernels import create_gpu_context
 
 @dataclass
 class MetropolisIsing:
@@ -35,6 +37,8 @@ class MetropolisIsing:
             self.rng = np.random.default_rng()
         self._init_spins()
         self.backend = "None"
+        self.spins_gpu = None
+        self.gpu_ready = False
 
     # ------------------------------------------------------------------ init/reset
 
@@ -43,6 +47,23 @@ class MetropolisIsing:
             self.spins = lattice.ordered_lattice(self.size, up=True)
         else:
             self.spins = lattice.random_lattice(self.size, self.rng)
+
+    def _init_gpu(self):
+        try:
+
+            self.spins_gpu = cuda.to_device(self.spins)
+            self.threadsperblock, self.blockspergrid, self.rng_states = create_gpu_context(self.size)
+
+            self.gpu_ready = True
+        except Exception as e:
+            print("GPU init failed, falling back to CPU:", e)
+            self.gpu_ready = False
+
+    def set_backend(self, mode: str):
+        self.backend = mode
+
+        if mode == "GPU":
+            self._init_gpu()
 
     def set_backend(self, mode: str):
         self.backend = mode
@@ -80,9 +101,19 @@ class MetropolisIsing:
 
         if self.backend == "CPU":
             sweep_kernel(self.spins, self.temperature, self.J, self.h, n_updates)
-        elif self.backend == "GPU":
-            # placeholder for now
-            sweep_kernel(self.spins, self.temperature, self.J, self.h, n_updates)
+        if self.backend == "GPU" and self.gpu_ready:
+            # RED pass
+            sweep_kernel_checkerboard[self.blockspergrid, self.threadsperblock](
+                self.spins_gpu, self.temperature, self.J, self.h, 0, self.rng_states
+            )
+
+            # BLACK pass
+            sweep_kernel_checkerboard[self.blockspergrid, self.threadsperblock](
+                self.spins_gpu, self.temperature, self.J, self.h, 1, self.rng_states
+            )
+
+            # Copy back occasionally (for now: every sweep)
+            self.spins = self.spins_gpu.copy_to_host()
         else:
             # pure python fallback
             for _ in range(n_updates):
