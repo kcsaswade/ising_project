@@ -7,7 +7,7 @@ Keeps GUI and simulation parameters in one place.
 # Window and layout
 #WINDOW_WIDTH = 1000
 WINDOW_WIDTH = 1260
-WINDOW_HEIGHT = 700
+WINDOW_HEIGHT = 825
 PANEL_WIDTH = 260
 FPS = 30
 

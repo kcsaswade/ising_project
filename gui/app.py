@@ -59,6 +59,16 @@ class IsingApp:
         self.MEASURE_STEPS = 800
         self.SUBSAMPLE = 10
 
+        # --- Annealing state ---
+        self.annealing = False
+        self.anneal_schedule = None
+        self.anneal_index = 0
+
+        # parameters (we'll expose in UI later)
+        self.ANNEAL_STEPS = 2000
+        self.T_start = 4.0
+        self.T_end = 1.0
+
         self.sweep_results = ([], [], [])  # T, C, χ
 
         # Fonts
@@ -220,13 +230,21 @@ class IsingApp:
         self.scroll_speed = 20  # pixels per scroll
         self.list_item_height = 25
 
-        # Define list box rect
+        self.anneal_button = Button(
+            pygame.Rect(
+                x,
+                self.sweep_button.rect.bottom + 10,
+                w,
+                button_h,
+            ),
+            text="Run Annealing",
+        )
+
         self.sweep_list_rect = pygame.Rect(
             self.controls_left + 10,
-            #self.lattice_selector.rect.bottom + 140,
-            y,
+            self.anneal_button.rect.bottom + 10,
             config.PANEL_WIDTH - 20,
-            100,  # visible height (adjust later)
+            100,
         )
 
         self.export_button = Button(
@@ -360,6 +378,11 @@ class IsingApp:
 
         # Simulation state
         self.simulation_running = False
+
+    def _init_annealing(self):
+        self.anneal_schedule = np.linspace(self.T_start, self.T_end, self.ANNEAL_STEPS)
+        self.anneal_index = 0
+        self.annealing = True
 
     # --------------------------------------------------------------------- main loop
 
@@ -567,6 +590,13 @@ class IsingApp:
             else:
                 self.derived_mode = "C"
                 self.toggle_button.text = "Show χ"
+
+        if self.anneal_button.handle_event(event):
+            self.mode = "ANNEAL"
+            self.simulation_running = False
+            self._clear_data()
+            self.sim.reset("random")
+            self._init_annealing()
         
         # Run sweep
         if self.sweep_button.handle_event(event):
@@ -607,6 +637,35 @@ class IsingApp:
                 self._export_selected_sweeps()
 
     # --------------------------------------------------------------------- simulation update
+
+    def _update_annealing(self):
+        if not self.annealing:
+            return
+
+        if self.anneal_index >= len(self.anneal_schedule):
+            self.annealing = False
+            return
+
+        T = self.anneal_schedule[self.anneal_index]
+        self.sim.set_temperature(T)
+
+        # do a few sweeps per temperature (important!)
+        sweeps_per_temp = 2
+
+        for _ in range(sweeps_per_temp):
+            self.sim.sweep(fraction=1.0)
+            self._update_performance(1)
+
+        # record observables (reuse your existing system)
+        m = self.sim.magnetization()
+        e = self.sim.energy_per_spin()
+
+        self.m_plot.add_point(m)
+        self.e_plot.add_point(e)
+        self.abs_m_plot.add_point(abs(m))
+        self.stats.add(e, m)
+
+        self.anneal_index += 1
 
     def _update_performance(self, sweeps=1):
         self.perf_sweeps += sweeps
@@ -702,8 +761,12 @@ class IsingApp:
         if self.mode == "SWEEP" and self.sweeping:
             self._update_sweep()
             return
+        if self.mode == "ANNEAL" and self.annealing:
+            self._update_annealing()
+            return
         if not self.simulation_running:
             return
+        
 
         steps_per_frame = int(round(self.steps_slider.value))
         steps_per_frame = max(1, min(steps_per_frame, config.MAX_STEPS_PER_FRAME))
@@ -988,6 +1051,7 @@ class IsingApp:
         self.steps_slider.draw(self.screen, self.font, disabled=controls_disabled)
         self.toggle_button.draw(self.screen, self.font, disabled=controls_disabled)
         self.sweep_button.draw(self.screen, self.font, disabled=controls_disabled)
+        self.anneal_button.draw(self.screen, self.font, disabled=controls_disabled)
 
         # Optimization label
         label = self.font.render("Optimization", True, config.TEXT_COLOR)
@@ -1010,6 +1074,10 @@ class IsingApp:
         e = self.sim.energy_per_spin()
         T = self.sim.temperature
         h_val = self.sim.h
+        if self.mode == "ANNEAL":
+            T = self.sim.temperature
+            label = self.font.render(f"Annealing: T = {T:.2f}", True, config.TEXT_COLOR)
+            self.screen.blit(label, (self.magnetization_plot_rect.x, 10))
 
         if self.mode == "SWEEP":
             if self.sweep_results is not None:
@@ -1230,6 +1298,7 @@ class IsingApp:
 
             # Plot
             self.derived_plot.draw(self.screen, self.derived_plot_rect)
+
         
         label = self.font.render("Select Lattice Size", True, config.TEXT_COLOR)
         self.screen.blit(label, (self.lattice_dropdown.rect.x, self.lattice_dropdown.rect.y - 20))
