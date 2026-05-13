@@ -495,8 +495,23 @@ class IsingApp:
                         meta["measure_steps"],
                         meta["subsample"],
                     ])
-
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
+
+        self._handle_global_events(event)
+
+        if self.problem_mode == "ISING":
+            self._handle_ising_events(event)
+
+        elif self.problem_mode == "TSP":
+            self._handle_tsp_events(event)
+
+    def _handle_global_events(self, event):
+        pass
+
+    def _handle_tsp_events(self, event):
+        pass
+
+    def _handle_ising_events(self, event: pygame.event.Event) -> None:
 
         # Lattice size selector
         result = self.lattice_dropdown.handle_event(event, disabled=(self.mode == "SWEEP"))
@@ -775,7 +790,18 @@ class IsingApp:
                 elapsed = time.time() - self._temp_start_time
                 print(f"T={T:.2f} took {elapsed:.2f}s")
 
-    def _update_simulation(self) -> None:
+    def _update_simulation(self):
+
+        if self.problem_mode == "ISING":
+            self._update_ising()
+
+        elif self.problem_mode == "TSP":
+            self._update_tsp()
+
+    def _update_tsp(self):
+        pass
+    
+    def _update_ising(self) -> None:
         if self.mode == "SWEEP" and self.sweeping:
             self._update_sweep()
             return
@@ -1034,8 +1060,48 @@ class IsingApp:
             )
 
     def _draw(self) -> None:
-        controls_disabled = (self.mode == "SWEEP")
+
         self.screen.fill(config.BG_COLOR)
+
+        if self.problem_mode == "ISING":
+            self._draw_ising_ui()
+
+        elif self.problem_mode == "TSP":
+            self._draw_tsp_ui()
+
+        pygame.display.flip()
+
+    def _draw_tsp_ui(self):
+
+        # panels
+        controls_rect = pygame.Rect(
+            self.controls_left,
+            0,
+            config.PANEL_WIDTH,
+            config.WINDOW_HEIGHT,
+        )
+
+        plots_rect = pygame.Rect(
+            self.plots_left,
+            0,
+            config.PANEL_WIDTH,
+            config.WINDOW_HEIGHT,
+        )
+
+        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, controls_rect)
+        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, plots_rect)
+
+        # placeholder text
+        label = self.font.render(
+            "TSP Mode Coming Soon",
+            True,
+            config.TEXT_COLOR,
+        )
+
+        self.screen.blit(label, (self.controls_left + 20, 40))
+
+    def _draw_ising_ui(self) -> None:
+        controls_disabled = (self.mode == "SWEEP")
 
         # Lattice
         self.lattice_renderer.draw(self.screen, self.sim.spins)
@@ -1208,7 +1274,6 @@ class IsingApp:
                 disabled=True,   # stays disabled during sweep
             )
 
-            pygame.display.flip()
             return
 
         self._draw_sweep_list()
@@ -1322,5 +1387,3 @@ class IsingApp:
         self.screen.blit(label, (self.lattice_dropdown.rect.x, self.lattice_dropdown.rect.y - 20))
 
         self.lattice_dropdown.draw(self.screen, self.font, disabled=(self.mode == "SWEEP"))
-
-        pygame.display.flip()
