@@ -18,6 +18,8 @@ from tkinter import filedialog
 import csv
 import sys
 import threading
+from optimization.problems.ising_problem import IsingProblem
+from optimization.annealer import SimulatedAnnealer
 
 
 class IsingApp:
@@ -40,6 +42,10 @@ class IsingApp:
         self.running = True
         self.stats = RunningStats(window_size=300)
         self.mode = "LIVE"   # or "SWEEP"
+
+        self.problem_mode = "ISING"
+        self.annealer = None
+        self.current_problem = None
 
         self.sweep_results = None
         self.sweep_temps = np.linspace(1.0, 4.0, 20)
@@ -65,9 +71,9 @@ class IsingApp:
         self.anneal_index = 0
 
         # parameters (we'll expose in UI later)
-        self.ANNEAL_STEPS = 2000
+        self.ANNEAL_STEPS = 1100000
         self.T_start = 4.0
-        self.T_end = 1.0
+        self.T_end = 0.01
 
         self.sweep_results = ([], [], [])  # T, C, χ
 
@@ -380,8 +386,18 @@ class IsingApp:
         self.simulation_running = False
 
     def _init_annealing(self):
-        self.anneal_schedule = np.linspace(self.T_start, self.T_end, self.ANNEAL_STEPS)
-        self.anneal_index = 0
+
+        self.current_problem = IsingProblem(self.sim)
+
+        self.annealer = SimulatedAnnealer(
+            self.current_problem,
+            T_start=self.T_start,
+            T_end=self.T_end,
+            steps=self.ANNEAL_STEPS,
+        )
+
+        self.current_problem.randomize()
+
         self.annealing = True
 
     # --------------------------------------------------------------------- main loop
@@ -639,33 +655,35 @@ class IsingApp:
     # --------------------------------------------------------------------- simulation update
 
     def _update_annealing(self):
+
         if not self.annealing:
             return
 
-        if self.anneal_index >= len(self.anneal_schedule):
-            self.annealing = False
-            return
+        steps_per_frame = 1000
 
-        T = self.anneal_schedule[self.anneal_index]
-        self.sim.set_temperature(T)
+        for _ in range(steps_per_frame):
 
-        # do a few sweeps per temperature (important!)
-        sweeps_per_temp = 2
+            alive = self.annealer.step()
 
-        for _ in range(sweeps_per_temp):
-            self.sim.sweep(fraction=1.0)
-            self._update_performance(1)
+            # sync GUI temperature display
+            self.sim.set_temperature(
+                self.annealer.temperature
+            )
 
-        # record observables (reuse your existing system)
+            if not alive:
+                self.annealing = False
+                print("Annealing complete")
+                break
+
+        # --- observables ---
         m = self.sim.magnetization()
         e = self.sim.energy_per_spin()
 
         self.m_plot.add_point(m)
         self.e_plot.add_point(e)
         self.abs_m_plot.add_point(abs(m))
-        self.stats.add(e, m)
 
-        self.anneal_index += 1
+        self.stats.add(e, m)
 
     def _update_performance(self, sweeps=1):
         self.perf_sweeps += sweeps
