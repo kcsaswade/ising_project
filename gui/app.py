@@ -1346,7 +1346,7 @@ class IsingApp:
 
         if (
             self.tsp_problem is not None
-            and self.tsp_route_display_mode in ["Annealing", "Both"]
+            and self.tsp_route_display_mode in ["NN", "Both"]
         ):
 
             nn_points = [

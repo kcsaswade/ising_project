@@ -18,31 +18,28 @@ class SimulatedAnnealer:
         self.steps = steps
 
         self.current_step = 0
-
         self.temperature = T_start
+
 
     def step(self):
 
-        # --- stop condition ---
+        # stop condition
         if self.current_step >= self.steps:
             return False
 
-        # --- normalized progress ---
+        # progress [0,1]
         alpha = self.current_step / self.steps
 
-        # --- exponential cooling ---
+        # geometric cooling
         self.temperature = (
             self.T_start
-            * (self.T_end / self.T_start) ** alpha
+            * (self.T_end / self.T_start)**alpha
         )
 
-        # --- propose move ---
         move = self.problem.propose_move()
 
-        # --- energy difference ---
         dE = self.problem.delta_cost(move)
 
-        # --- metropolis acceptance ---
         if dE <= 0:
             accept = True
         else:
@@ -51,17 +48,8 @@ class SimulatedAnnealer:
                 < np.exp(-dE / self.temperature)
             )
 
-        # --- apply accepted move ---
         if accept:
-
             self.problem.accept_move(move)
-
-            current_energy = self.problem.energy()
-
-            if current_energy < self.problem.best_cost:
-
-                self.problem.best_cost = current_energy
-                self.problem.best_route = self.problem.route.copy()
 
         self.current_step += 1
 

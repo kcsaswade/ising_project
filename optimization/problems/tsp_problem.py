@@ -16,11 +16,15 @@ class TSPProblem(AnnealableProblem):
         self.cities = cities
         self.route = route
 
-        self.best_route = route.copy()
-        self.best_cost = self.total_distance(route)
+        # Annealer best state
+        self.best_cost = self.energy()
+        self.best_route = self.route.copy()
 
+        # Baseline (nearest-neighbor)
         self.nn_route = self.nearest_neighbor_route()
-        self.nn_cost = self.total_distance(self.nn_route)
+        self.nn_cost = self.total_distance(
+            self.nn_route
+        )
 
     def total_distance(self, route=None):
 
@@ -60,31 +64,33 @@ class TSPProblem(AnnealableProblem):
 
         n = len(self.route)
 
-        i = np.random.randint(0, n)
-        j = np.random.randint(0, n)
+        while True:
 
-        if i > j:
-            i, j = j, i
+            i = np.random.randint(0, n)
+            j = np.random.randint(0, n)
 
-        if abs(i - j) < 2:
-            return None
+            if i > j:
+                i, j = j, i
 
-        return (i, j)
+            if abs(i - j) >= 2:
+                return (i, j)
     
     def delta_cost(self, move):
-
-        if move is None:
-            return 0.0
 
         i, j = move
 
         n = len(self.route)
 
-        a = self.cities[self.route[(i - 1) % n]]
-        b = self.cities[self.route[i]]
+        a_idx = self.route[(i - 1) % n]
+        b_idx = self.route[i]
 
-        c = self.cities[self.route[j]]
-        d = self.cities[self.route[(j + 1) % n]]
+        c_idx = self.route[j]
+        d_idx = self.route[(j + 1) % n]
+
+        a = self.cities[a_idx]
+        b = self.cities[b_idx]
+        c = self.cities[c_idx]
+        d = self.cities[d_idx]
 
         old_cost = (
             distance(a, b)
@@ -100,14 +106,17 @@ class TSPProblem(AnnealableProblem):
     
     def accept_move(self, move):
 
-        if move is None:
-            return
-
         i, j = move
 
         self.route[i:j+1] = reversed(
             self.route[i:j+1]
         )
+
+        current = self.energy()
+
+        if current < self.best_cost:
+            self.best_cost = current
+            self.best_route = self.route.copy()
 
     def reject_move(self):
         pass
