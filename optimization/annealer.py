@@ -53,7 +53,15 @@ class SimulatedAnnealer:
 
         # --- apply accepted move ---
         if accept:
+
             self.problem.accept_move(move)
+
+            current_energy = self.problem.energy()
+
+            if current_energy < self.problem.best_cost:
+
+                self.problem.best_cost = current_energy
+                self.problem.best_route = self.problem.route.copy()
 
         self.current_step += 1
 

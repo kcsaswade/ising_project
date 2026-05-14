@@ -48,6 +48,8 @@ class IsingApp:
         self.annealer = None
         self.current_problem = None
         self.tsp_annealer = None
+        self.tsp_problem = None
+        self.tsp_route_display_mode = "Both"
 
         self.sweep_results = None
         self.sweep_temps = np.linspace(1.0, 4.0, 20)
@@ -442,6 +444,27 @@ class IsingApp:
             text="Run TSP Annealing",
         )
 
+        self.tsp_route_selector = RadioButtonGroup(
+            ["Annealing", "NN", "Both"],
+            position=(
+                self.controls_left + 20,
+                200,
+            ),
+            spacing=90,
+            default=2,
+        )
+
+        self.city_count_dropdown = Dropdown(
+            rect=pygame.Rect(
+                self.controls_left + 10,
+                240,
+                config.PANEL_WIDTH - 20,
+                30,
+            ),
+            options=[10, 20, 30, 50, 75, 100],
+            default_index=2,   # 30
+        )
+
         self.tsp_length_plot_rect = pygame.Rect(
             self.plots_left + 20,
             80,
@@ -630,6 +653,16 @@ class IsingApp:
         pass
 
     def _handle_tsp_events(self, event):
+
+        new_count = self.city_count_dropdown.handle_event(event)
+
+        if (
+            new_count is not None
+            and new_count != "BLOCK"
+        ):
+            self.num_cities = int(new_count)
+
+        
         if self.generate_cities_button.handle_event(event):
             self._generate_tsp_cities()
 
@@ -654,6 +687,11 @@ class IsingApp:
                     T_end=0.01,
                     steps=200000,
                 )
+
+        choice = self.tsp_route_selector.handle_event(event)
+
+        if choice is not None:
+            self.tsp_route_display_mode = choice
 
     def _handle_ising_events(self, event: pygame.event.Event) -> None:
 
@@ -1303,6 +1341,50 @@ class IsingApp:
         )
 
         # ---------------------------------------------------------
+        # NEAREST NEIGHBOR ROUTE
+        # ---------------------------------------------------------
+
+        if (
+            self.tsp_problem is not None
+            and self.tsp_route_display_mode in ["Annealing", "Both"]
+        ):
+
+            nn_points = [
+                self.tsp_cities[i]
+                for i in self.tsp_problem.nn_route
+            ]
+
+            nn_points.append(nn_points[0])
+
+            pygame.draw.lines(
+                self.screen,
+                (255, 170, 80),
+                False,
+                nn_points,
+                2,
+            )
+        # ---------------------------------------------------------
+        # BEST ROUTE FOUND
+        # ---------------------------------------------------------
+
+        if self.tsp_problem is not None:
+
+            best_points = [
+                self.tsp_cities[i]
+                for i in self.tsp_problem.best_route
+            ]
+
+            best_points.append(best_points[0])
+
+            pygame.draw.lines(
+                self.screen,
+                (100, 255, 120),
+                False,
+                best_points,
+                3,
+            )
+
+        # ---------------------------------------------------------
         # ROUTE
         # ---------------------------------------------------------
 
@@ -1338,23 +1420,27 @@ class IsingApp:
             )
 
         # ---------------------------------------------------------
-        # TITLE
+        # OPTIONS & CONTROLS
         # ---------------------------------------------------------
 
-        # label = self.font.render(
-        #     "Traveling Salesman Problem",
-        #     True,
-        #     config.TEXT_COLOR,
-        # )
+        label = self.font.render(
+            "Number of Cities",
+            True,
+            config.TEXT_COLOR,
+        )
 
-        # self.screen.blit(
-        #     label,
-        #     (self.controls_left + 10, 50),
-        # )
+        self.screen.blit(
+            label,
+            (
+                self.city_count_dropdown.rect.x,
+                self.city_count_dropdown.rect.y - 18,
+            ),
+        )
 
-        # ---------------------------------------------------------
-        # BUTTONS
-        # ---------------------------------------------------------
+        self.city_count_dropdown.draw(
+            self.screen,
+            self.font,
+        )
 
         self.generate_cities_button.draw(
             self.screen,
@@ -1367,6 +1453,22 @@ class IsingApp:
         )
 
         self.run_tsp_anneal_button.draw(
+            self.screen,
+            self.font,
+        )
+
+        label = self.font.render(
+            "Show Routes",
+            True,
+            config.TEXT_COLOR,
+        )
+
+        self.screen.blit(
+            label,
+            (self.controls_left + 10, 170),
+        )
+
+        self.tsp_route_selector.draw(
             self.screen,
             self.font,
         )
@@ -1414,6 +1516,34 @@ class IsingApp:
             self.screen,
             self.tsp_temp_plot_rect,
         )
+
+        if (
+            self.tsp_problem is not None
+            and self.tsp_route_display_mode in ["NN", "Both"]
+        ):
+
+            current_cost = self.tsp_problem.energy()
+
+            y0 = 620
+
+            lines = [
+                f"Current: {current_cost:.1f}",
+                f"Best: {self.tsp_problem.best_cost:.1f}",
+                f"Nearest Neighbor: {self.tsp_problem.nn_cost:.1f}",
+            ]
+
+            for i, text in enumerate(lines):
+
+                label = self.font.render(
+                    text,
+                    True,
+                    config.TEXT_COLOR,
+                )
+
+                self.screen.blit(
+                    label,
+                    (self.plots_left + 20, y0 + i * 25),
+                )
 
     def _draw_ising_ui(self) -> None:
         controls_disabled = (self.mode == "SWEEP")

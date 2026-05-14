@@ -16,6 +16,31 @@ class TSPProblem(AnnealableProblem):
         self.cities = cities
         self.route = route
 
+        self.best_route = route.copy()
+        self.best_cost = self.total_distance(route)
+
+        self.nn_route = self.nearest_neighbor_route()
+        self.nn_cost = self.total_distance(self.nn_route)
+
+    def total_distance(self, route=None):
+
+        if route is None:
+            route = self.route
+
+        total = 0.0
+
+        for i in range(len(route)):
+
+            a = self.cities[route[i]]
+            b = self.cities[route[(i + 1) % len(route)]]
+
+            dx = a[0] - b[0]
+            dy = a[1] - b[1]
+
+            total += (dx * dx + dy * dy) ** 0.5
+
+        return total
+
     def route_length(self):
 
         total = 0.0
@@ -88,8 +113,42 @@ class TSPProblem(AnnealableProblem):
         pass
 
     def energy(self):
-        return self.route_length()
+        return self.total_distance()
     
     def randomize(self):
         np.random.shuffle(self.route)   
+
+    def nearest_neighbor_route(self):
+
+        N = len(self.cities)
+
+        if N == 0:
+            return []
+
+        unvisited = set(range(N))
+
+        current = 0
+
+        route = [current]
+        unvisited.remove(current)
+
+        while unvisited:
+
+            current_city = self.cities[current]
+
+            next_city = min(
+                unvisited,
+                key=lambda j: (
+                    (current_city[0] - self.cities[j][0]) ** 2
+                    + (current_city[1] - self.cities[j][1]) ** 2
+                )
+            )
+
+            route.append(next_city)
+
+            unvisited.remove(next_city)
+
+            current = next_city
+
+        return route
     
