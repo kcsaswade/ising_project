@@ -82,6 +82,7 @@ class IsingApp:
         # --- TSP state ---
         self.tsp_cities = []
         self.tsp_route = []
+        self.tsp_schedule = "EXP"
 
         self.num_cities = 30
         self.tsp_best_length = float("inf")
@@ -465,6 +466,16 @@ class IsingApp:
             default_index=2,   # 30
         )
 
+        self.tsp_schedule_selector = RadioButtonGroup(
+            ["EXP", "LINEAR", "LOG", "FAST"],
+            position=(
+                self.controls_left + 20,
+                320,
+            ),
+            spacing=70,
+            default=0,
+        )
+
         self.tsp_length_plot_rect = pygame.Rect(
             self.plots_left + 20,
             80,
@@ -506,9 +517,10 @@ class IsingApp:
 
         self.tsp_annealer = SimulatedAnnealer(
             self.tsp_problem,
-            T_start=5.0,
-            T_end=0.001,
-            steps=50000,
+            T_start=100.0,
+            T_end=0.01,
+            steps=200000,
+            schedule=self.tsp_schedule,
         )
         self.tsp_best_length = float("inf")
 
@@ -692,6 +704,13 @@ class IsingApp:
 
         if choice is not None:
             self.tsp_route_display_mode = choice
+
+        choice = self.tsp_schedule_selector.handle_event(
+            event
+        )
+
+        if choice is not None:
+            self.tsp_schedule = choice
 
     def _handle_ising_events(self, event: pygame.event.Event) -> None:
 
@@ -1471,6 +1490,25 @@ class IsingApp:
         self.tsp_route_selector.draw(
             self.screen,
             self.font,
+        )
+
+        label = self.font.render(
+            "Cooling Schedule",
+            True,
+            config.TEXT_COLOR,
+        )
+
+        self.screen.blit(
+            label,
+            (
+                self.controls_left + 10,
+                285,
+            )
+        )
+
+        self.tsp_schedule_selector.draw(
+            self.screen,
+            self.small_font,
         )
 
         # ---------------------------------------------------------
