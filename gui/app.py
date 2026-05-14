@@ -20,6 +20,7 @@ import sys
 import threading
 from optimization.problems.ising_problem import IsingProblem
 from optimization.annealer import SimulatedAnnealer
+from optimization.problems.tsp_problem import TSPProblem
 
 
 class IsingApp:
@@ -46,6 +47,7 @@ class IsingApp:
         self.problem_mode = "ISING"
         self.annealer = None
         self.current_problem = None
+        self.tsp_annealer = None
 
         self.sweep_results = None
         self.sweep_temps = np.linspace(1.0, 4.0, 20)
@@ -74,6 +76,13 @@ class IsingApp:
         self.ANNEAL_STEPS = 1100000
         self.T_start = 4.0
         self.T_end = 0.01
+
+        # --- TSP state ---
+        self.tsp_cities = []
+        self.tsp_route = []
+
+        self.num_cities = 30
+        self.tsp_best_length = float("inf")
 
         self.sweep_results = ([], [], [])  # T, C, χ
 
@@ -124,6 +133,15 @@ class IsingApp:
             config.WINDOW_HEIGHT,
         )
         self.lattice_renderer = LatticeRenderer(lattice_rect)
+
+        self.problem_selector = RadioButtonGroup(
+            ["ISING", "TSP"],
+            position=(x + 5, y+25),
+            spacing=100,
+            default=0,
+        )
+
+        y += 40
 
         # Start / Pause toggle
         self.start_button = ToggleButton(
@@ -382,12 +400,68 @@ class IsingApp:
             y_range=None,
         )
 
+        self.tsp_length_plot = TimeSeriesPlot(
+            max_points=300,
+            label="Tour Length",
+            y_range=None,
+        )
+
+        self.tsp_temp_plot = TimeSeriesPlot(
+            max_points=300,
+            label="Temperature",
+            y_range=None,
+        )
+
         # Simulation state
         self.simulation_running = False
+
+        self.tsp_canvas_rect = pygame.Rect(
+            0,
+            0,
+            self.controls_left,
+            config.WINDOW_HEIGHT,
+        )
+
+        self.generate_cities_button = Button(
+            pygame.Rect(x, 50, w, button_h),
+            text="Generate Cities",
+        )
+
+        self.shuffle_tour_button = Button(
+            pygame.Rect(x, 90, w, button_h),
+            text="Shuffle Tour",
+        )
+
+        self.run_tsp_anneal_button = Button(
+            pygame.Rect(
+                self.controls_left + 10,
+                130,
+                config.PANEL_WIDTH - 20,
+                30,
+            ),
+            text="Run TSP Annealing",
+        )
+
+        self.tsp_length_plot_rect = pygame.Rect(
+            self.plots_left + 20,
+            80,
+            config.PANEL_WIDTH - 40,
+            220,
+        )
+
+        self.tsp_temp_plot_rect = pygame.Rect(
+            self.plots_left + 20,
+            360,
+            config.PANEL_WIDTH - 40,
+            220,
+        )
 
     def _init_annealing(self):
 
         self.current_problem = IsingProblem(self.sim)
+
+        self.tsp_length_plot.clear()
+        self.tsp_temp_plot.clear()
 
         self.annealer = SimulatedAnnealer(
             self.current_problem,
@@ -399,6 +473,21 @@ class IsingApp:
         self.current_problem.randomize()
 
         self.annealing = True
+
+    def _init_tsp_annealing(self):
+
+        self.tsp_problem.randomize()
+
+        self.tsp_length_plot.clear()
+        self.tsp_temp_plot.clear()
+
+        self.tsp_annealer = SimulatedAnnealer(
+            self.tsp_problem,
+            T_start=5.0,
+            T_end=0.001,
+            steps=50000,
+        )
+        self.tsp_best_length = float("inf")
 
     # --------------------------------------------------------------------- main loop
 
@@ -463,6 +552,34 @@ class IsingApp:
 
             root.destroy()
             return path if path else None
+        
+    def _generate_tsp_cities(self):
+
+        self.tsp_cities = []
+
+        rect = self.tsp_canvas_rect
+
+        margin = 40
+
+        for _ in range(self.num_cities):
+
+            x = np.random.randint(
+                rect.left + margin,
+                rect.right - margin,
+            )
+
+            y = np.random.randint(
+                rect.top + margin,
+                rect.bottom - margin,
+            )
+
+            self.tsp_cities.append((x, y))
+
+        self.tsp_route = list(range(len(self.tsp_cities)))
+
+    def _shuffle_tsp_route(self):
+
+        np.random.shuffle(self.tsp_route)
 
     def _export_selected_sweeps(self):
 
@@ -498,6 +615,10 @@ class IsingApp:
     def _handle_controls_event(self, event: pygame.event.Event) -> None:
 
         self._handle_global_events(event)
+        choice = self.problem_selector.handle_event(event)
+
+        if choice is not None:
+            self.problem_mode = choice
 
         if self.problem_mode == "ISING":
             self._handle_ising_events(event)
@@ -509,7 +630,30 @@ class IsingApp:
         pass
 
     def _handle_tsp_events(self, event):
-        pass
+        if self.generate_cities_button.handle_event(event):
+            self._generate_tsp_cities()
+
+        if self.shuffle_tour_button.handle_event(event):
+            self._shuffle_tsp_route()
+
+        if self.run_tsp_anneal_button.handle_event(event):
+
+            if len(self.tsp_cities) >= 2:
+
+                self.tsp_problem = TSPProblem(
+                    self.tsp_cities,
+                    self.tsp_route,
+                )
+
+                self.tsp_length_plot.clear()
+                self.tsp_temp_plot.clear()
+
+                self.tsp_annealer = SimulatedAnnealer(
+                    self.tsp_problem,
+                    T_start=100.0,
+                    T_end=0.01,
+                    steps=200000,
+                )
 
     def _handle_ising_events(self, event: pygame.event.Event) -> None:
 
@@ -669,6 +813,30 @@ class IsingApp:
 
     # --------------------------------------------------------------------- simulation update
 
+    def _update_tsp(self):
+
+        if self.tsp_annealer is not None:
+
+            for _ in range(200):
+
+                running = self.tsp_annealer.step()
+                current_length = self.tsp_problem.energy()
+
+                if current_length < self.tsp_best_length:
+                    self.tsp_best_length = current_length
+
+                self.tsp_length_plot.add_point(
+                    self.tsp_best_length
+                )
+
+                self.tsp_temp_plot.add_point(
+                    self.tsp_annealer.temperature
+                )
+
+                if not running:
+                    self.tsp_annealer = None
+                    break
+
     def _update_annealing(self):
 
         if not self.annealing:
@@ -797,9 +965,7 @@ class IsingApp:
 
         elif self.problem_mode == "TSP":
             self._update_tsp()
-
-    def _update_tsp(self):
-        pass
+            return
     
     def _update_ising(self) -> None:
         if self.mode == "SWEEP" and self.sweeping:
@@ -1059,6 +1225,28 @@ class IsingApp:
                 pygame.Rect(rect.right - scrollbar_width, bar_y, scrollbar_width, bar_height),
             )
 
+    def _draw_global_ui(self) -> None:
+
+        label = self.font.render(
+            "Problem Type",
+            True,
+            config.TEXT_COLOR,
+        )
+
+        self.screen.blit(
+            label,
+            (
+                self.problem_selector.x - 5,
+                self.problem_selector.y - 25,
+            )
+        )
+
+        self.problem_selector.draw(
+            self.screen,
+            self.font,
+            disabled=False,
+        )
+
     def _draw(self) -> None:
 
         self.screen.fill(config.BG_COLOR)
@@ -1069,11 +1257,15 @@ class IsingApp:
         elif self.problem_mode == "TSP":
             self._draw_tsp_ui()
 
+        self._draw_global_ui()
         pygame.display.flip()
 
     def _draw_tsp_ui(self):
 
-        # panels
+        # ---------------------------------------------------------
+        # PANELS
+        # ---------------------------------------------------------
+
         controls_rect = pygame.Rect(
             self.controls_left,
             0,
@@ -1088,17 +1280,140 @@ class IsingApp:
             config.WINDOW_HEIGHT,
         )
 
-        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, controls_rect)
-        pygame.draw.rect(self.screen, config.PANEL_BG_COLOR, plots_rect)
+        pygame.draw.rect(
+            self.screen,
+            config.PANEL_BG_COLOR,
+            controls_rect,
+        )
 
-        # placeholder text
+        pygame.draw.rect(
+            self.screen,
+            config.PANEL_BG_COLOR,
+            plots_rect,
+        )
+
+        # ---------------------------------------------------------
+        # TSP CANVAS
+        # ---------------------------------------------------------
+
+        pygame.draw.rect(
+            self.screen,
+            (15, 15, 25),
+            self.tsp_canvas_rect,
+        )
+
+        # ---------------------------------------------------------
+        # ROUTE
+        # ---------------------------------------------------------
+
+        if len(self.tsp_route) >= 2:
+
+            points = [
+                self.tsp_cities[i]
+                for i in self.tsp_route
+            ]
+
+            # close the loop
+            points.append(points[0])
+
+            pygame.draw.lines(
+                self.screen,
+                (100, 220, 255),
+                False,
+                points,
+                2,
+            )
+
+        # ---------------------------------------------------------
+        # CITIES
+        # ---------------------------------------------------------
+
+        for x, y in self.tsp_cities:
+
+            pygame.draw.circle(
+                self.screen,
+                (240, 240, 240),
+                (x, y),
+                5,
+            )
+
+        # ---------------------------------------------------------
+        # TITLE
+        # ---------------------------------------------------------
+
+        # label = self.font.render(
+        #     "Traveling Salesman Problem",
+        #     True,
+        #     config.TEXT_COLOR,
+        # )
+
+        # self.screen.blit(
+        #     label,
+        #     (self.controls_left + 10, 50),
+        # )
+
+        # ---------------------------------------------------------
+        # BUTTONS
+        # ---------------------------------------------------------
+
+        self.generate_cities_button.draw(
+            self.screen,
+            self.font,
+        )
+
+        self.shuffle_tour_button.draw(
+            self.screen,
+            self.font,
+        )
+
+        self.run_tsp_anneal_button.draw(
+            self.screen,
+            self.font,
+        )
+
+        # ---------------------------------------------------------
+        # RIGHT PANEL (PLOTS)
+        # ---------------------------------------------------------
+
+        # --- Plot titles ---
+
         label = self.font.render(
-            "TSP Mode Coming Soon",
+            "Tour Length",
             True,
             config.TEXT_COLOR,
         )
+        self.screen.blit(
+            label,
+            (
+                self.tsp_length_plot_rect.x,
+                self.tsp_length_plot_rect.y - 25,
+            ),
+        )
 
-        self.screen.blit(label, (self.controls_left + 20, 40))
+        label = self.font.render(
+            "Temperature",
+            True,
+            config.TEXT_COLOR,
+        )
+        self.screen.blit(
+            label,
+            (
+                self.tsp_temp_plot_rect.x,
+                self.tsp_temp_plot_rect.y - 25,
+            ),
+        )
+
+        # --- Draw plots ---
+
+        self.tsp_length_plot.draw(
+            self.screen,
+            self.tsp_length_plot_rect,
+        )
+
+        self.tsp_temp_plot.draw(
+            self.screen,
+            self.tsp_temp_plot_rect,
+        )
 
     def _draw_ising_ui(self) -> None:
         controls_disabled = (self.mode == "SWEEP")
