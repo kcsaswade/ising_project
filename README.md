@@ -6,6 +6,8 @@ The project combines statistical physics, Monte Carlo methods, numerical simulat
 
 The architecture is deliberately modular so that additional annealable optimization problems can be added without modifying the core annealing algorithm.
 
+The full project theory report can be found [here](https://drive.google.com/file/d/1GWudGZpCnPTjM9lCVk9KLebU2qATVSbg/view?usp=sharing).
+
 ---
 
 ## Overview
