@@ -132,7 +132,7 @@ The two modes share the underlying application infrastructure while keeping thei
 Clone the repository and install the required Python dependencies:
 
 ```bash
-git clone <YOUR-REPOSITORY-URL>
+git clone https://github.com/kcsaswade/ising_project
 cd ising_project
 pip install -r requirements.txt
 ```
